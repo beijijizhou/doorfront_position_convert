@@ -1,6 +1,7 @@
 import csv
 import time
 import os
+import shapely.geometry as geom
 def time_function(func):
     def wrapper(*args, **kwargs):
         start_time = time.time()  # Start time
@@ -26,10 +27,13 @@ def read_doorfront_data(file_path, geo_calculator):
             reader = csv.DictReader(file)
             data = [row for row in reader]
             # data = json.load(file)
-        total_data = len(data)
+        length = 1000
+
+        original_points = [(0, 0)] * length
+        updated_points = [(0, 0)] * length
         empty_building = 0
         intersected_building = 0
-        for item in data[:total_data]:
+        for idx, item in enumerate(data[:length]):
             latitude = item.get("latitude")
             longitude = item.get("longitude")
             markerpov_heading = item.get("markerpov_heading")
@@ -43,15 +47,18 @@ def read_doorfront_data(file_path, geo_calculator):
                     point[0], point[1], heading)
                 # print(nearest_intersection)
                 # print(nearest_intersection)
-                if nearest_intersection["intersection"] is not None:
+                if nearest_intersection["intersection"] != geom.Point(0, 0):
                     # print(nearest_intersection["intersection"])
                     intersected_building += 1
                     item["longitude"], item["latitude"] = nearest_intersection["intersection"]
                     item["markerpov_heading"] = 0
+                    original_points[idx] = (latitude, longitude)
+                    updated_points[idx] = nearest_intersection["intersection"]
                 else:
                     empty_building += 1
-        saveFileInCSV(data)
-        print("total data point entry is ", total_data)
+        # saveFileInCSV(data)
+        geo_calculator.plot_points_difference(original_points, updated_points)
+        print("total data point entry is ", length)
         print("found intersection is ", intersected_building)        
         print("empty intersection is ", empty_building)
     except FileNotFoundError:

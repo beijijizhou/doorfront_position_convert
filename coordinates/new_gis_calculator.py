@@ -2,8 +2,11 @@
 
 import pyproj
 import folium
+import matplotlib
+import mapclassify
 import numpy as np
 import geopandas as gpd
+from shapely import Point
 import shapely.geometry as geom
 import dask_geopandas as dgpd
 import time
@@ -53,9 +56,9 @@ class GeolocationCalculator():
         # self.buildings_gdf = self.buildings_gdf
         # print(self.buildings_gdf)
         # Transform a Point object from CRS 4326 to CRS 2263
-        self.transformer_ = self.get_transformer()
+        self.transformer_from_4326_to_target = self.get_transformer_from_4326_to_target()
         # Transform a Point object from CRS 2263 to CRS 4326
-        self.back_transformer_ = self.get_back_transformer_()
+        self.transformer_from_target_to_4326 = self.get_transformer_from_target_to_4326()
 
     def get_buildings_gdf(self, file_path):
         """
@@ -63,22 +66,22 @@ class GeolocationCalculator():
         """
         # Use pyogrio to read the file
         data = pyogrio.read_dataframe(file_path)
-        
+
         # Convert to a GeoDataFrame
         gdf = gpd.GeoDataFrame(data, geometry='geometry')
-        
+
         # Convert to Dask GeoDataFrame
         dask_gdf = dgpd.from_geopandas(gdf, npartitions=1)
-        
+
         # Transform the CRS
         return dask_gdf.to_crs(self.target_crs)
 
-    def get_transformer(self):
+    def get_transformer_from_4326_to_target(self):
         return pyproj.Transformer.from_crs(
             4326, self.target_crs, always_xy=True
         )
 
-    def get_back_transformer_(self):
+    def get_transformer_from_target_to_4326(self):
         return pyproj.Transformer.from_crs(
             self.target_crs, 4326, always_xy=True
         )
@@ -89,14 +92,14 @@ class GeolocationCalculator():
         :param lat: latitude
         :param lng: longitude
         """
-        return geom.Point(self.transformer_.transform(float(lng), float(lat)))
+        return geom.Point(self.transformer_from_4326_to_target.transform(float(lng), float(lat)))
 
     def back_transform_(self, point_object):
         """
         This function transforms a point from CRS 2263 to CRS 4326
         :param point_object: a Point object from shapely.geometry.Point class.
         """
-        return self.back_transformer_.transform(point_object.x, point_object.y)
+        return self.transformer_from_target_to_4326.transform(point_object.x, point_object.y)
 
     def generate_ray(self, point, heading, distance=500):
         """
@@ -117,22 +120,6 @@ class GeolocationCalculator():
 
         return ray
 
-    def generate_bbox(geom_obj):
-        """
-        This function generates a bounding box from a geometry object.
-        :param geom_obj: a geometry object from shapely.geometry class.
-        """
-        bounds = geom_obj.bounds
-        # The order is left_top, left_bottom, right_bottom, right_top
-        bbox = geom.Polygon(
-            [
-                (bounds[0], bounds[1]),
-                (bounds[0], bounds[3]),
-                (bounds[2], bounds[3]),
-                (bounds[2], bounds[1]),
-            ]
-        )
-        return bbox
 
     def get_nearest_intersection(self, lat, lng, heading, distance=500):
         """
@@ -144,19 +131,14 @@ class GeolocationCalculator():
         """
         # Initialize variables to store nearest intersection point and distance
         self.nearest_distance = float("inf")
-        self.nearest_intersection = None
-
-        # Initialize variables to store the point of interest and the ray
-        geo_point = self.transform_(lat, lng)
+        self.nearest_intersection = geom.Point(0, 0)
+        transformer = pyproj.Transformer.from_crs(4326, 2263, always_xy=True)
+        x, y = transformer.transform(lng, lat)
+        geo_point = Point(x, y)
         self.ray = self.generate_ray(geo_point, heading)
-        # print(self.buildings_gdf.intersects(self.ray))
-        # print(self.buildings_gdf[self.buildings_gdf.intersects(self.ray)], self.ray)
-        # Find all buildings that intersect with the ray
+
         self.candidate_buildings = self.get_candidate_buildings(
             self.buildings_gdf, self.ray)
-        # print(self.candidate_buildings)
-        # print(self.candidate_buildings, filtered_gdf)
-        # print("115", self.candidate_buildings)
         for index, row in self.candidate_buildings.iterrows():
             building = row.geometry
             intersections = self.ray.intersection(building)
@@ -180,6 +162,8 @@ class GeolocationCalculator():
 
         # Convert the nearest intersection point to latitude and longitude
         if self.nearest_intersection:
+            print(self.nearest_intersection, self.back_transform_(
+                self.nearest_intersection))
             self.nearest_intersection = self.back_transform_(
                 self.nearest_intersection)
         return {"distance": self.nearest_distance, "intersection": self.nearest_intersection}
@@ -207,14 +191,16 @@ class GeolocationCalculator():
         # Reset index to ensure clean indexing
 
     def plot_map(self, point_buffer=10):
+        
         nearest_intersection_2263 = self.transform_(
             self.nearest_intersection[1], self.nearest_intersection[0])
-
+        
         ray_gdf = gpd.GeoDataFrame(dict(address="Test_ray", bbl=1, geometry=[
                                    self.ray]), crs=self.target_crs)
         intersection_point_df = gpd.GeoDataFrame(dict(address="Test_point", bbl=2, geometry=[
                                                  nearest_intersection_2263.buffer(point_buffer)]), crs=self.target_crs)
-
+        # print("2263",self.nearest_intersection, nearest_intersection_2263)
+        # print("intersection_point_df", intersection_point_df)
         m = self.buildings_gdf.explore()
 
         ray_gdf.explore(m=m, color='red')
@@ -224,11 +210,43 @@ class GeolocationCalculator():
 
         return m
 
-# FILE_PATH = "./pluto (1).geojson"
-# point = (40.7667734,-73.9808934)
-# heading = 45
+    def plot_points_difference(self, updated_points, point_buffer=10):
+        # Transform updated points to the target CRS
+        transformed_points = [self.transform_(
+            lat, lon) for lat, lon in updated_points]
 
-# myCalculator = GeolocationCalculator(FILE_PATH)
-# result = myCalculator.get_nearest_intersection(point[0], point[1], heading)
-# nearest_intersection = result["intersection"]
+        # Create GeoDataFrame for updated points
+        updated_points_gdf = gpd.GeoDataFrame(
+            dict(address=["Updated Point"] * len(updated_points),
+                 bbl=[1] * len(updated_points),
+                 geometry=[Point(pt) for pt in transformed_points]),
+            crs=self.target_crs
+        )
+        # print("new 2263",updated_points,transformed_points)
+        # updated_points_buffer_gdf = gpd.GeoDataFrame(dict(address="Test_point", bbl=2, geometry=[
+        #                                          transformed_points[0].buffer(point_buffer)]), crs=self.target_crs)
+        # print(updated_points_buffer_gdf)
+        # Create buffers around updated points
+        # updated_points_buffer_gdf = gpd.GeoDataFrame(
+        #     dict(address=["Updated Point Buffer"] * len(updated_points),
+        #          bbl=[2] * len(updated_points),
+        #          geometry=[point.buffer(point_buffer) for point in transformed_points]),
+        #     crs=self.target_crs
+        # )
+        # print(updated_points_buffer_gdf)
+
+        # Print the buffers to verify
+
+        # Plot the map
+
+
+FILE_PATH = "./pluto (1).geojson"
+point = (40.7667734, -73.9808934)
+heading = 45
+
+myCalculator = GeolocationCalculator(FILE_PATH)
+result = myCalculator.get_nearest_intersection(point[0], point[1], heading)
+nearest_intersection = result["intersection"]
+myCalculator.plot_map()
+# print("ABOVE is from single point")
 # print(nearest_intersection)

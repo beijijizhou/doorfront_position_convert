@@ -6,3 +6,5 @@ shapely
 dask-geopandas
 pyogrio
 fiona
+matplotlib
+mapclassify

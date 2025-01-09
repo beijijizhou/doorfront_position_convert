@@ -2,6 +2,7 @@ from new_gis_calculator import GeolocationCalculator
 import json
 import csv
 import time
+import os
 def time_function(func):
     def wrapper(*args, **kwargs):
         start_time = time.time()  # Start time
@@ -65,12 +66,13 @@ def read_doorfront_data(file_path, geo_calculator):
 
 def main():
     # Path to the GeoJSON file
-    pluto_file_path = "./pluto (2).geojson"
+    pluto_file_path = "./pluto (1).geojson"
     # doorfront_data_file_path = "./doorfront_data.json"
     doorfront_data_file_path = "./doorfront.csv"
-    # import pyogrio
-    # print(pyogrio.__gdal_version__)
-    # Initialize GeolocationCalculator
+    if os.path.exists(pluto_file_path):
+        print(f"File exists: {pluto_file_path}")
+    else:
+        raise FileNotFoundError(f"File not found: {pluto_file_path}")
     geo_calculator = GeolocationCalculator(pluto_file_path)
     
     # End timer for GeolocationCalculator initialization
@@ -79,7 +81,7 @@ def main():
     # Start timer for read_doorfront_data function
 
     # Call read_doorfront_data function
-    read_doorfront_data(doorfront_data_file_path, geo_calculator)
+    # read_doorfront_data(doorfront_data_file_path, geo_calculator)
 
    
 

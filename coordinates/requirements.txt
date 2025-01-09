@@ -1,0 +1,8 @@
+pyproj
+folium
+numpy
+geopandas
+shapely
+dask-geopandas
+pyogrio
+fiona

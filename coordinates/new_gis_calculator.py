@@ -1,5 +1,6 @@
 
 
+from matplotlib import pyplot as plt
 import pyproj
 import folium
 import matplotlib
@@ -53,6 +54,7 @@ class GeolocationCalculator():
         """
         self.target_crs = 2263
         self.buildings_gdf = self.get_buildings_gdf(file_path).compute()
+        self.ny_points = []
         # self.buildings_gdf = self.buildings_gdf
         # print(self.buildings_gdf)
         # Transform a Point object from CRS 4326 to CRS 2263
@@ -120,8 +122,19 @@ class GeolocationCalculator():
 
         return ray
 
+    def get_ny_point_from_global_point(self, point: Point) -> Point:
+        lat, lng = point.y, point.x
+        transformer = pyproj.Transformer.from_crs(4326, 2263, always_xy=True)
+        x, y = transformer.transform(lng, lat)
+        return Point(x, y)
 
-    def get_nearest_intersection(self, lat, lng, heading, distance=500):
+    def get_global_point_from_ny_point(self, point: Point) -> Point:
+        x, y = point.x, point.y
+        transformer = pyproj.Transformer.from_crs(2263, 4326, always_xy=True)
+        lng, lat = transformer.transform(x, y)
+        return Point(lng, lat)
+
+    def get_nearest_intersection(self, global_point: Point, heading, distance=500) -> Point:
         """
         This function finds the nearest intersection point of a ray from a point of interest with the nearest building.
         :param lat: latitude
@@ -131,44 +144,46 @@ class GeolocationCalculator():
         """
         # Initialize variables to store nearest intersection point and distance
         self.nearest_distance = float("inf")
-        self.nearest_intersection = geom.Point(0, 0)
-        transformer = pyproj.Transformer.from_crs(4326, 2263, always_xy=True)
-        x, y = transformer.transform(lng, lat)
-        geo_point = Point(x, y)
-        self.ray = self.generate_ray(geo_point, heading)
+        self.nearest_intersection_point = geom.Point(0, 0)
+        ny_coordinates_point = self.get_ny_point_from_global_point(
+            global_point)
+        self.ray = self.generate_ray(ny_coordinates_point, heading)
 
-        self.candidate_buildings = self.get_candidate_buildings(
+        self.intersected_buildings = self.get_intersected_buildings(
             self.buildings_gdf, self.ray)
-        for index, row in self.candidate_buildings.iterrows():
+
+        for _, row in self.intersected_buildings.iterrows():
             building = row.geometry
             intersections = self.ray.intersection(building)
+
             if intersections:
+                # Handle MultiLineString and LineString uniformly
                 if intersections.geom_type == "MultiLineString":
-                    for line in intersections.geoms:
-                        for point in line.coords:
-                            # Convert the coordinates to a Point object
-                            intersection_point = geom.Point(point)
-                            distance = intersection_point.distance(geo_point)
-                            if distance < self.nearest_distance:
-                                self.nearest_distance = distance
-                                self.nearest_intersection = intersection_point
+                    intersection_points = [
+                        Point(coord) for line in intersections.geoms for coord in line.coords]
                 elif intersections.geom_type == "LineString":
-                    for intersection in intersections.coords:
-                        intersection_point = geom.Point(intersection)
-                        distance = intersection_point.distance(geo_point)
-                        if distance < self.nearest_distance:
-                            self.nearest_distance = distance
-                            self.nearest_intersection = intersection_point
+                    intersection_points = [Point(coord)
+                                           for coord in intersections.coords]
+                else:
+                    continue  # Skip unsupported geometry types
 
+                # Find the nearest intersection point
+                for intersection_point in intersection_points:
+                    distance = intersection_point.distance(
+                        ny_coordinates_point)
+                    if distance < self.nearest_distance:
+                        self.nearest_distance = distance
+                        self.nearest_intersection_point = intersection_point
+
+        if self.nearest_intersection_point != Point(0, 0):
+            # self.ny_points.append(self.nearest_intersection_point)
+            # print(self.nearest_intersection_point)
+            return self.get_global_point_from_ny_point(self.nearest_intersection_point)
+            # return self.get_ny_point_from_global_point(self.nearest_intersection_point)
         # Convert the nearest intersection point to latitude and longitude
-        if self.nearest_intersection:
-            print(self.nearest_intersection, self.back_transform_(
-                self.nearest_intersection))
-            self.nearest_intersection = self.back_transform_(
-                self.nearest_intersection)
-        return {"distance": self.nearest_distance, "intersection": self.nearest_intersection}
+        return self.nearest_intersection_point
 
-    def get_candidate_buildings(self, buildings_gdf: gpd.GeoDataFrame, ray: gpd.GeoSeries) -> gpd.GeoDataFrame:
+    def get_intersected_buildings(self, buildings_gdf: gpd.GeoDataFrame, ray: gpd.GeoSeries) -> gpd.GeoDataFrame:
         """
         Function to filter buildings that intersect with the given ray.
 
@@ -191,10 +206,10 @@ class GeolocationCalculator():
         # Reset index to ensure clean indexing
 
     def plot_map(self, point_buffer=10):
-        
-        nearest_intersection_2263 = self.transform_(
-            self.nearest_intersection[1], self.nearest_intersection[0])
-        
+        print(self.nearest_intersection_point)
+        nearest_intersection_2263 = self.get_ny_point_from_global_point(
+            self.nearest_intersection_point)
+        print(nearest_intersection_2263)
         ray_gdf = gpd.GeoDataFrame(dict(address="Test_ray", bbl=1, geometry=[
                                    self.ray]), crs=self.target_crs)
         intersection_point_df = gpd.GeoDataFrame(dict(address="Test_point", bbl=2, geometry=[
@@ -204,49 +219,44 @@ class GeolocationCalculator():
         m = self.buildings_gdf.explore()
 
         ray_gdf.explore(m=m, color='red')
+        print(intersection_point_df)
         intersection_point_df.explore(m=m, color='yellow')
         folium.LayerControl().add_to(m)
         m.save("map.html")
 
         return m
 
-    def plot_points_difference(self, updated_points, point_buffer=10):
+    def plot_points_difference(self, original_points, updated_points: list[Point]):
+        point_buffer = 10
         # Transform updated points to the target CRS
-        transformed_points = [self.transform_(
-            lat, lon) for lat, lon in updated_points]
+        updated_points = [
+            point for point in updated_points if isinstance(point, Point)]
 
-        # Create GeoDataFrame for updated points
-        updated_points_gdf = gpd.GeoDataFrame(
-            dict(address=["Updated Point"] * len(updated_points),
-                 bbl=[1] * len(updated_points),
-                 geometry=[Point(pt) for pt in transformed_points]),
-            crs=self.target_crs
+        # ny_points = [self.get_ny_point_from_global_point(
+        #     point)for point in updated_points]
+        ny_points = updated_points
+        ny_points_gdf = gpd.GeoDataFrame(
+            dict(
+                # Same address for all points
+                address=["Test_point"] * len(ny_points),
+                # Same BBL for all points
+                bbl=[2] * len(ny_points),
+                geometry=ny_points                       # Geometry column with points
+            ),
+            crs="EPSG:4326"  # Coordinate reference system
         )
-        # print("new 2263",updated_points,transformed_points)
-        # updated_points_buffer_gdf = gpd.GeoDataFrame(dict(address="Test_point", bbl=2, geometry=[
-        #                                          transformed_points[0].buffer(point_buffer)]), crs=self.target_crs)
-        # print(updated_points_buffer_gdf)
-        # Create buffers around updated points
-        # updated_points_buffer_gdf = gpd.GeoDataFrame(
-        #     dict(address=["Updated Point Buffer"] * len(updated_points),
-        #          bbl=[2] * len(updated_points),
-        #          geometry=[point.buffer(point_buffer) for point in transformed_points]),
-        #     crs=self.target_crs
-        # )
-        # print(updated_points_buffer_gdf)
-
-        # Print the buffers to verify
-
-        # Plot the map
+        m = self.buildings_gdf.explore()
+        ny_points_gdf.explore(m=m, color="black", marker_type="circle", marker_kwds={"radius": 5})
+        m.save("updated points.html")
 
 
-FILE_PATH = "./pluto (1).geojson"
-point = (40.7667734, -73.9808934)
-heading = 45
+# FILE_PATH = "./pluto (1).geojson"
+# point = (40.7667734, -73.9808934)
+# heading = 45
 
-myCalculator = GeolocationCalculator(FILE_PATH)
-result = myCalculator.get_nearest_intersection(point[0], point[1], heading)
-nearest_intersection = result["intersection"]
-myCalculator.plot_map()
+# myCalculator = GeolocationCalculator(FILE_PATH)
+# result = myCalculator.get_nearest_intersection(point[0], point[1], heading)
+# nearest_intersection = result["intersection"]
+# myCalculator.plot_map()
 # print("ABOVE is from single point")
 # print(nearest_intersection)

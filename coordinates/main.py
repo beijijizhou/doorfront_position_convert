@@ -1,10 +1,12 @@
+
+from plot_utility import plot_csv_data_with_arrows
 from new_gis_calculator import GeolocationCalculator
 from file_utility import read_doorfront_data
 import os
 def main():
     # Path to the GeoJSON file
-    # pluto_file_path = "./full_nyc_buildings.geojson"
-    file_path = "./pluto (1).geojson"
+    file_path = "./full_nyc_buildings.geojson"
+    # file_path = "./pluto (1).geojson"
     if os.path.exists(file_path):
         print(f"File exists: {file_path}")
     else:
@@ -13,6 +15,7 @@ def main():
     doorfront_data_file_path = "./doorfront.csv"
     geo_calculator = GeolocationCalculator(file_path)
     read_doorfront_data(doorfront_data_file_path, geo_calculator)
-    
 if __name__ == "__main__":
-    main()
+    # main()
+    plot_csv_data_with_arrows(200)
+

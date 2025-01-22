@@ -1,7 +1,9 @@
 import pandas as pd
 import folium
+from shapely import Point
 
-from help import integrate_with_lat_lon
+from help import generate_ray
+
 
 def create_custom_popup(row):
     """
@@ -25,17 +27,17 @@ def add_markers_to_map(map_plot, data, color):
 
     for _, row in data.iterrows():
         try:
-            lat_lon = (row['latitude'], row['longitude'])  # Tuple of lat and lon
+            # Tuple of lat and lon
+            lat_lon = (row['latitude'], row['longitude'])
             heading = row['markerpov_heading']
-            ray = integrate_with_lat_lon(lat_lon, heading)
-            print(ray)
+
             # integrate_with_lat_lon(lat_lon)
             # Increment the count for this lat, lon pair
             if lat_lon in lat_lon_count:
                 lat_lon_count[lat_lon] += 1
             else:
                 lat_lon_count[lat_lon] = 1
-
+            plot_ray_on_map(lat_lon, heading, map_plot)
             # Add the marker to the map
             folium.Marker(
                 location=[row['latitude'], row['longitude']],
@@ -43,10 +45,28 @@ def add_markers_to_map(map_plot, data, color):
                 icon=folium.Icon(color=color),
                 draggable=True,
             ).add_to(map_plot)
-        
+
         except Exception as e:
             print(f"Error processing row {row.name}: {e}")
     # printDuplicate(lat_lon_count)
+
+
+def plot_ray_on_map(lat_lon, heading, map_plot):
+    point = Point(lat_lon[1], lat_lon[0])  # Create a Point object (lon, lat)
+    ray = generate_ray(point, heading)  # Generate the ray
+
+    # Extract coordinates from the LineString object
+    ray_coords = [(coord[1], coord[0])
+                  for coord in ray.coords]  # Convert (lon, lat) to (lat, lon)
+    # print(ray_coords)
+    # Add the ray to the map as a PolyLine
+    folium.PolyLine(
+        locations=ray_coords,  # Pass the coordinates
+        color='blue',          # Set the line color
+        weight=2,              # Set the line weight
+        opacity=0.8            # Set the line opacity
+    ).add_to(map_plot)
+
 
 def printDuplicate(lat_lon_count):
     # Print the duplicates (lat, lon pairs that appear more than once)
@@ -54,10 +74,10 @@ def printDuplicate(lat_lon_count):
     total_dup = 0
     for lat_lon, count in lat_lon_count.items():
         if count > 1:
-            print(f"Latitude: {lat_lon[0]}, Longitude: {lat_lon[1]} - Count: {count}")
+            print(f"Latitude: {lat_lon[0]}, Longitude: {
+                  lat_lon[1]} - Count: {count}")
             total_dup += 1
     print(f"The total duplicate is {total_dup}")
-
 
 
 def create_map_with_markers(new_data_path, old_data_path):
@@ -74,11 +94,10 @@ def create_map_with_markers(new_data_path, old_data_path):
     map_plot = folium.Map(location=map_center, zoom_start=12)
     # Add markers for both datasets
     # add_markers_to_map(map_plot, new_data, color='blue')  # First dataset (blue markers)
-    add_markers_to_map(map_plot, old_data, color='red')   # Second dataset (red markers)
-
+    # Second dataset (red markers)
+    add_markers_to_map(map_plot, old_data, color='red')
     # Save the map to an HTML file
-    output_file = 'map_plot.html'
-
+ 
 
     return map_plot
 

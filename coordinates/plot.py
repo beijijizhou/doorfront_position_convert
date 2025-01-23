@@ -27,7 +27,7 @@ def create_custom_popup(row):
 def add_markers_to_map(map_plot, data, color):
     # Dictionary to keep track of lat, lon counts
     lat_lon_count = {}
-
+    success = fail = 0
     for _, row in data.iterrows():
         try:
             # Tuple of lat and lon
@@ -48,13 +48,16 @@ def add_markers_to_map(map_plot, data, color):
                 icon=folium.Icon(color=color),
                 draggable=True,
             ).add_to(map_plot)
-
+            success += 1
         except Exception as e:
+            fail += 1
             print(f"Error processing row {row.name}: {e}")
+    print("sucess", success)
+    print("fail", fail)
     # printDuplicate(lat_lon_count)
 
 
-def plot_intersection(intersection_point, intersection_count, map_plot):
+def plot_intersection_point(intersection_point,  map_plot):
     """
     Plot the closest intersection point on the map and print the results.
 
@@ -66,18 +69,17 @@ def plot_intersection(intersection_point, intersection_count, map_plot):
     Returns:
         folium.Map: The updated Folium map.
     """
-    if intersection_point:
-        print(f"Closest intersection point: {intersection_point}")
-        print(f"Total intersections: {intersection_count}")
-        folium.Marker(
-            location=[intersection_point.y, intersection_point.x],
-            icon=folium.Icon(color='green')
-        ).add_to(map_plot)
+
+    # print(f"Closest intersection point: {intersection_point}")
+    folium.Marker(
+        location=[intersection_point.y, intersection_point.x],
+        icon=folium.Icon(color='blue')
+    ).add_to(map_plot)
 
     return map_plot
 
 
-def plot_intersection(ray, gdf, map_plot):
+def get_and_plot_intersection(ray, gdf, map_plot):
     """
     Find the closest intersection point, count intersections, and plot the result on the map.
 
@@ -93,11 +95,11 @@ def plot_intersection(ray, gdf, map_plot):
             - folium.Map: The updated Folium map.
     """
     # Get the intersection point and count
-    intersection_point, intersection_count = get_intersection(ray, gdf)
-
+    intersection_point = get_intersection(ray, gdf)
+    print(intersection_point)
     # Plot the intersection
-    # map_plot = plot_intersection(
-    #     intersection_point, intersection_count, map_plot)
+    map_plot = plot_intersection_point(
+        intersection_point, map_plot)
 
 
 def plot_ray_on_map(lat_lon, heading, map_plot):
@@ -111,7 +113,7 @@ def plot_ray_on_map(lat_lon, heading, map_plot):
         style_function=lambda x: {'color': 'black',
                                   'weight': 3}  # Customize the line style
     ).add_to(map_plot)
-    plot_intersection(ray, gdf, map_plot)
+    get_and_plot_intersection(ray, gdf, map_plot)
 
     # Extract coordinates from the LineString object
 
@@ -134,7 +136,7 @@ def create_map_with_markers(new_data_path, old_data_path):
     geojson_file_path = "./full_nyc_buildings.geojson"
     manhattan_file_path = "./manhattan.geojson"
 
-    max_row = 100
+    max_row = 1000
     new_data = pd.read_csv(new_data_path)[:max_row]
     old_data = pd.read_csv(old_data_path)[:max_row]
     # Create a map centered around the average location of both datasets
@@ -143,7 +145,7 @@ def create_map_with_markers(new_data_path, old_data_path):
         (new_data['longitude'].mean() + old_data['longitude'].mean()) / 2
     ]
     map_plot = folium.Map(location=map_center, zoom_start=12)
-    gdf = get_buildings_gdf()
+    gdf = get_buildings_gdf(manhattan_file_path)
     gdf = gdf.to_crs('EPSG:4326')
 
     # folium.GeoJson(

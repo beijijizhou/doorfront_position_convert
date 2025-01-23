@@ -1,6 +1,7 @@
 import pandas as pd
 import folium
 from shapely import Point
+import random
 
 from geojson_reader import get_buildings_gdf
 from help import generate_ray, get_intersection
@@ -128,38 +129,29 @@ def printDuplicate(lat_lon_count):
                   lat_lon[1]} - Count: {count}")
             total_dup += 1
     print(f"The total duplicate is {total_dup}")
-
-
+def get_random_sample(data):
+    size = 0.1
+    sample_size = int(len(data) * size)
+    return data.sample(n=sample_size, random_state=42)
 def create_map_with_markers(new_data_path, old_data_path):
     global gdf
     # Load the data from both files
     geojson_file_path = "./full_nyc_buildings.geojson"
     manhattan_file_path = "./manhattan.geojson"
 
-    max_row = 1000
-    new_data = pd.read_csv(new_data_path)[:max_row]
-    old_data = pd.read_csv(old_data_path)[:max_row]
+    
+    old_data = pd.read_csv(old_data_path)
+    old_data = get_random_sample(old_data)
     # Create a map centered around the average location of both datasets
     map_center = [
-        (new_data['latitude'].mean() + old_data['latitude'].mean()) / 2,
-        (new_data['longitude'].mean() + old_data['longitude'].mean()) / 2
+        (old_data['latitude'].mean() + old_data['latitude'].mean()) / 2,
+        (old_data['longitude'].mean() + old_data['longitude'].mean()) / 2
     ]
-    map_plot = folium.Map(location=map_center, zoom_start=12)
+    map_plot = folium.Map(location=map_center, zoom_start=12, tiles='OpenStreetMap')
     gdf = get_buildings_gdf(manhattan_file_path)
     gdf = gdf.to_crs('EPSG:4326')
 
-    # folium.GeoJson(
-    #     gdf,  # Your GeoDataFrame
-    #     name="Buildings",  # Layer name
-    #     tooltip=folium.GeoJsonTooltip(
-    #         fields=["address", "bbl"],  # Use the actual column names in your GeoDataFrame
-    #         aliases=["Address", "BBL"]  # Customize the tooltip labels
-    #     ),
-    #     style_function=lambda x: {'fillColor': 'blue', 'color': 'black', 'weight': 1}  # Style the polygons
-    # ).add_to(map_plot)
-    # Add markers for both datasets
-    # add_markers_to_map(map_plot, new_data, color='blue')  # First dataset (blue markers)
-    # Second dataset (red markers)
+
     add_markers_to_map(map_plot, old_data, color='red')
     # Save the map to an HTML file
 

@@ -2,7 +2,10 @@ import pandas as pd
 import folium
 from shapely import Point
 
-from help import generate_ray
+from geojson_reader import get_buildings_gdf
+from help import generate_ray, get_intersection
+
+gdf = None
 
 
 def create_custom_popup(row):
@@ -51,21 +54,66 @@ def add_markers_to_map(map_plot, data, color):
     # printDuplicate(lat_lon_count)
 
 
+def plot_intersection(intersection_point, intersection_count, map_plot):
+    """
+    Plot the closest intersection point on the map and print the results.
+
+    Args:
+        intersection_point (shapely.geometry.Point): The closest intersection point.
+        intersection_count (int): The total number of intersections.
+        map_plot (folium.Map): The Folium map to which the intersection will be added.
+
+    Returns:
+        folium.Map: The updated Folium map.
+    """
+    if intersection_point:
+        print(f"Closest intersection point: {intersection_point}")
+        print(f"Total intersections: {intersection_count}")
+        folium.Marker(
+            location=[intersection_point.y, intersection_point.x],
+            icon=folium.Icon(color='green')
+        ).add_to(map_plot)
+
+    return map_plot
+
+
+def plot_intersection(ray, gdf, map_plot):
+    """
+    Find the closest intersection point, count intersections, and plot the result on the map.
+
+    Args:
+        ray (shapely.geometry.LineString): The ray (LineString) to check for intersections.
+        gdf (geopandas.GeoDataFrame): The GeoDataFrame containing building geometries.
+        map_plot (folium.Map): The Folium map to which the intersection will be added.
+
+    Returns:
+        tuple: A tuple containing:
+            - shapely.geometry.Point: The closest intersection point, or None if no intersection is found.
+            - int: The total number of intersections.
+            - folium.Map: The updated Folium map.
+    """
+    # Get the intersection point and count
+    intersection_point, intersection_count = get_intersection(ray, gdf)
+
+    # Plot the intersection
+    # map_plot = plot_intersection(
+    #     intersection_point, intersection_count, map_plot)
+
+
 def plot_ray_on_map(lat_lon, heading, map_plot):
+    global gdf
     point = Point(lat_lon[1], lat_lon[0])  # Create a Point object (lon, lat)
     ray = generate_ray(point, heading)  # Generate the ray
+    # folium.GeoJson(ray.geometry[0], style_function=lambda x: {'color': 'red'}).add_to(map_plot)
+    ray_geometry = ray.geometry[0]
+    folium.GeoJson(
+        ray_geometry,
+        style_function=lambda x: {'color': 'black',
+                                  'weight': 3}  # Customize the line style
+    ).add_to(map_plot)
+    plot_intersection(ray, gdf, map_plot)
 
     # Extract coordinates from the LineString object
-    ray_coords = [(coord[1], coord[0])
-                  for coord in ray.coords]  # Convert (lon, lat) to (lat, lon)
-    # print(ray_coords)
-    # Add the ray to the map as a PolyLine
-    folium.PolyLine(
-        locations=ray_coords,  # Pass the coordinates
-        color='blue',          # Set the line color
-        weight=2,              # Set the line weight
-        opacity=0.8            # Set the line opacity
-    ).add_to(map_plot)
 
 
 def printDuplicate(lat_lon_count):
@@ -81,9 +129,12 @@ def printDuplicate(lat_lon_count):
 
 
 def create_map_with_markers(new_data_path, old_data_path):
-
+    global gdf
     # Load the data from both files
-    max_row = 400
+    geojson_file_path = "./full_nyc_buildings.geojson"
+    manhattan_file_path = "./manhattan.geojson"
+
+    max_row = 100
     new_data = pd.read_csv(new_data_path)[:max_row]
     old_data = pd.read_csv(old_data_path)[:max_row]
     # Create a map centered around the average location of both datasets
@@ -92,12 +143,23 @@ def create_map_with_markers(new_data_path, old_data_path):
         (new_data['longitude'].mean() + old_data['longitude'].mean()) / 2
     ]
     map_plot = folium.Map(location=map_center, zoom_start=12)
+    gdf = get_buildings_gdf()
+    gdf = gdf.to_crs('EPSG:4326')
+
+    # folium.GeoJson(
+    #     gdf,  # Your GeoDataFrame
+    #     name="Buildings",  # Layer name
+    #     tooltip=folium.GeoJsonTooltip(
+    #         fields=["address", "bbl"],  # Use the actual column names in your GeoDataFrame
+    #         aliases=["Address", "BBL"]  # Customize the tooltip labels
+    #     ),
+    #     style_function=lambda x: {'fillColor': 'blue', 'color': 'black', 'weight': 1}  # Style the polygons
+    # ).add_to(map_plot)
     # Add markers for both datasets
     # add_markers_to_map(map_plot, new_data, color='blue')  # First dataset (blue markers)
     # Second dataset (red markers)
     add_markers_to_map(map_plot, old_data, color='red')
     # Save the map to an HTML file
- 
 
     return map_plot
 

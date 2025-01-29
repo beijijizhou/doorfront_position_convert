@@ -1,17 +1,17 @@
+from shapely.geometry import Point
 import numpy as np
 import shapely.geometry as geom
-from shapely.geometry import Point, LineString
-from shapely.geometry import Point, LineString
 import geopandas as gpd
-
-
-import numpy as np
 from shapely.geometry import Point, LineString
-import geopandas as gpd
+from geopandas import GeoSeries
+from typing import Optional, Tuple
+from dask_geopandas import GeoDataFrame
 
 intersected_count = 0
 non_intersected_count = 0
-def generate_ray(point, heading, distance=1/1600, global_crs='EPSG:4326'):
+
+
+def generate_ray(point: Point, heading: float, distance=1/1600, global_crs='EPSG:4326') -> GeoSeries:
     """
     Generate a ray from a point of interest in the global CRS.
 
@@ -42,7 +42,7 @@ def generate_ray(point, heading, distance=1/1600, global_crs='EPSG:4326'):
     return ray_geoseries
 
 
-def get_intersected_buildings(ray, buildings_gdf):
+def get_intersected_buildings(ray:GeoSeries, buildings_gdf:GeoDataFrame) -> GeoDataFrame:
     global intersected_count, non_intersected_count
     """
     Function to filter buildings that intersect with the given ray.
@@ -72,10 +72,8 @@ def get_intersected_buildings(ray, buildings_gdf):
             intersected_count += 1
         else:
             non_intersected_count += 1
-        # Debugging: Print the results
         # print(intersected_count, non_intersected_count)
-        # print("Intersected Buildings:", intersected_buildings)
-        print(intersected_count, non_intersected_count)
+       
 
         return intersected_buildings
 
@@ -83,46 +81,53 @@ def get_intersected_buildings(ray, buildings_gdf):
         print(f"Error in get_intersected_buildings: {e}")
         return gpd.GeoDataFrame()  # Return an empty GeoDataFrame in case of error
 
-from shapely.geometry import Point
 
-def get_closest_intersection_point(ray, gdf):
+def get_closest_intersection_point(ray: GeoSeries, gdf:GeoDataFrame) -> Tuple[Optional[GeoSeries], Optional[Point]]:
     # Get intersected buildings
     intersected_buildings = get_intersected_buildings(ray, gdf)
 
-    # Calculate intersection points
+    # Calculate intersection points and associate them with buildings
     intersections = []
     for idx, building in intersected_buildings.iterrows():
         intersection = ray.geometry[0].intersection(building.geometry)
         if not intersection.is_empty:
-            intersections.append(intersection)
+            # Store intersection and building
+            intersections.append((intersection, building))
 
-    # Extract points from intersections
-    intersection_points = []
-    for intersection in intersections:
+    # Extract points from intersections and associate them with buildings
+    intersection_points_with_buildings = []
+    for intersection, building in intersections:
         if intersection.geom_type == "MultiLineString":
-            intersection_points.extend(
-                [Point(coord) for line in intersection.geoms for coord in line.coords]
-            )
+            for line in intersection.geoms:
+                for coord in line.coords:
+                    intersection_points_with_buildings.append(
+                        (Point(coord), building))
         elif intersection.geom_type == "LineString":
-            intersection_points.extend(
-                [Point(coord) for coord in intersection.coords]
-            )
+            for coord in intersection.coords:
+                intersection_points_with_buildings.append(
+                    (Point(coord), building))
         elif intersection.geom_type == "Point":
-            intersection_points.append(intersection)
+            intersection_points_with_buildings.append((intersection, building))
         elif intersection.geom_type == "MultiPoint":
-            intersection_points.extend(list(intersection.geoms))
+            for point in intersection.geoms:
+                intersection_points_with_buildings.append((point, building))
 
-    # Find the closest intersection point
-    if intersection_points:
+    # Find the closest intersection point and its associated building
+    if intersection_points_with_buildings:
         ray_start_point = Point(ray.geometry[0].coords[0])
 
-        # Find the closest intersection point
-        closest_intersection = min(
-            intersection_points, key=lambda x: ray_start_point.distance(x)
+        # Find the closest intersection point and building
+        closest_intersection_point, closest_building = min(
+            intersection_points_with_buildings,
+            key=lambda x: ray_start_point.distance(
+                x[0])  # Compare distance to the point
         )
         
-        return closest_intersection
+        return closest_building, closest_intersection_point
 
-def get_intersection(ray, gdf):
+    return None, None  # Return None if no intersections are found
+
+
+def get_intersection(ray: GeoSeries, gdf: GeoDataFrame):
     intersected_buildings = get_intersected_buildings(ray, gdf)
     return get_closest_intersection_point(ray, intersected_buildings)

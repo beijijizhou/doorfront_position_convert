@@ -11,6 +11,8 @@ import dask_geopandas as dgpd
 import time
 import pyogrio
 import fiona
+from geopandas import GeoDataFrame
+
 def time_function(func):
     """
     A decorator to measure the time taken by a function.
@@ -24,7 +26,7 @@ def time_function(func):
         return result
     return wrapper
 @time_function
-def get_buildings_gdf(geojson_file_path = "./pluto (1).geojson"):
+def get_buildings_gdf(geojson_file_path = "./pluto (1).geojson") -> GeoDataFrame:
     """
     Optimized function to read the building data and transform to the target CRS using pyogrio.
     """

@@ -1,12 +1,15 @@
+from typing import Optional, Tuple
+from dask_geopandas import GeoDataFrame
 import pandas as pd
 import folium
-from shapely import Point
+from shapely import MultiPolygon, Point
 import random
-
+from geopandas import GeoSeries
 from geojson_reader import get_buildings_gdf
 from help import generate_ray, get_intersection
 
-gdf = None
+gdf: GeoDataFrame = None
+map_plot: folium.Map = None
 
 
 def create_custom_popup(row):
@@ -24,11 +27,33 @@ def create_custom_popup(row):
         popup_html += f"<b>{col}:</b> {value}<br>"
     return popup_html
 
+def correct_doorfront_location(row, gdf):
+    row_copy = row.copy()
+    lat_lon = (row_copy['latitude'], row_copy['longitude'])
+    heading = row_copy['markerpov_heading']
 
-def add_markers_to_map(map_plot, data, color):
+    ray = get_and_plot_ray_on_map(lat_lon, heading)
+    intersected_building, intersection_point = get_and_plot_intersection(ray, gdf)
+
+    if intersection_point:
+        row_copy['latitude'] = intersection_point.y
+        row_copy['longitude'] = intersection_point.x
+
+    return row_copy
+def save_corrected_data(corrected_data, filename="corrected_doorfront_data"):
+    if corrected_data:
+        corrected_df = pd.DataFrame(corrected_data)
+        corrected_df.to_csv(f"{filename}.csv", index=False)
+        print(f"Saved corrected data as {filename}.csv and {filename}.json")
+        return corrected_df
+    return None
+
+def add_markers_to_map(data, color):
+    global map_plot
     # Dictionary to keep track of lat, lon counts
     lat_lon_count = {}
     success = fail = 0
+    corrected_data = []
     for _, row in data.iterrows():
         try:
             # Tuple of lat and lon
@@ -41,81 +66,65 @@ def add_markers_to_map(map_plot, data, color):
                 lat_lon_count[lat_lon] += 1
             else:
                 lat_lon_count[lat_lon] = 1
-            plot_ray_on_map(lat_lon, heading, map_plot)
+            corrected_row = correct_doorfront_location(row, gdf)
+            corrected_data.append(corrected_row)
             # Add the marker to the map
+            
             folium.Marker(
                 location=[row['latitude'], row['longitude']],
                 popup=create_custom_popup(row),
                 icon=folium.Icon(color=color),
                 draggable=True,
             ).add_to(map_plot)
+
             success += 1
         except Exception as e:
             fail += 1
             print(f"Error processing row {row.name}: {e}")
     print("sucess", success)
     print("fail", fail)
+    return save_corrected_data(corrected_data)
     # printDuplicate(lat_lon_count)
 
 
-def plot_intersection_point(intersection_point,  map_plot):
-    """
-    Plot the closest intersection point on the map and print the results.
-
-    Args:
-        intersection_point (shapely.geometry.Point): The closest intersection point.
-        intersection_count (int): The total number of intersections.
-        map_plot (folium.Map): The Folium map to which the intersection will be added.
-
-    Returns:
-        folium.Map: The updated Folium map.
-    """
-
-    # print(f"Closest intersection point: {intersection_point}")
+def plot_intersection_point(intersection_point):
     folium.Marker(
         location=[intersection_point.y, intersection_point.x],
         icon=folium.Icon(color='blue')
     ).add_to(map_plot)
 
-    return map_plot
 
+def get_and_plot_intersection(ray: GeoSeries, gdf: GeoDataFrame) -> Tuple[Optional[GeoSeries], Optional[Point]]:
+    intersected_building, intersection_point = get_intersection(ray, gdf)
+    if isinstance(intersected_building['geometry'], MultiPolygon):
+        intersected_building['geometry'] = intersected_building['geometry'].geoms[0]
+    # building_geojson = gdf.GeoSeries(intersected_building['geometry']).__geo_interface__
+    folium.GeoJson(
+        intersected_building['geometry'],  # The geometry of the building
+        style_function=lambda x: {
+            'fillColor': 'blue',  # Fill color of the polygon
+            'color': 'blue',      # Border color of the polygon
+            'weight': 2,          # Border thickness
+            'fillOpacity': 0.4    # Fill opacity
+        },
+        tooltip=f"Address: {intersected_building['address']}<br>BBL: {
+            intersected_building['bbl']}<br>Borough: {intersected_building['borough']}"
+    ).add_to(map_plot)
 
-def get_and_plot_intersection(ray, gdf, map_plot):
-    """
-    Find the closest intersection point, count intersections, and plot the result on the map.
+    plot_intersection_point(intersection_point)
+    return intersected_building, intersection_point
 
-    Args:
-        ray (shapely.geometry.LineString): The ray (LineString) to check for intersections.
-        gdf (geopandas.GeoDataFrame): The GeoDataFrame containing building geometries.
-        map_plot (folium.Map): The Folium map to which the intersection will be added.
-
-    Returns:
-        tuple: A tuple containing:
-            - shapely.geometry.Point: The closest intersection point, or None if no intersection is found.
-            - int: The total number of intersections.
-            - folium.Map: The updated Folium map.
-    """
-    # Get the intersection point and count
-    intersection_point = get_intersection(ray, gdf)
-    print(intersection_point)
-    # Plot the intersection
-    map_plot = plot_intersection_point(
-        intersection_point, map_plot)
-
-
-def plot_ray_on_map(lat_lon, heading, map_plot):
-    global gdf
+def get_and_plot_ray_on_map(lat_lon, heading):
     point = Point(lat_lon[1], lat_lon[0])  # Create a Point object (lon, lat)
     ray = generate_ray(point, heading)  # Generate the ray
-    # folium.GeoJson(ray.geometry[0], style_function=lambda x: {'color': 'red'}).add_to(map_plot)
     ray_geometry = ray.geometry[0]
     folium.GeoJson(
         ray_geometry,
         style_function=lambda x: {'color': 'black',
                                   'weight': 3}  # Customize the line style
     ).add_to(map_plot)
-    get_and_plot_intersection(ray, gdf, map_plot)
-
+    
+    return ray
     # Extract coordinates from the LineString object
 
 
@@ -129,17 +138,20 @@ def printDuplicate(lat_lon_count):
                   lat_lon[1]} - Count: {count}")
             total_dup += 1
     print(f"The total duplicate is {total_dup}")
+
+
 def get_random_sample(data):
-    size = 0.1
+    size = 0.01
     sample_size = int(len(data) * size)
     return data.sample(n=sample_size, random_state=42)
+
+
 def create_map_with_markers(new_data_path, old_data_path):
-    global gdf
+    global gdf, map_plot
     # Load the data from both files
     geojson_file_path = "./full_nyc_buildings.geojson"
     manhattan_file_path = "./manhattan.geojson"
-
-    
+    nyc = "./nyc.geojson"
     old_data = pd.read_csv(old_data_path)
     old_data = get_random_sample(old_data)
     # Create a map centered around the average location of both datasets
@@ -147,12 +159,12 @@ def create_map_with_markers(new_data_path, old_data_path):
         (old_data['latitude'].mean() + old_data['latitude'].mean()) / 2,
         (old_data['longitude'].mean() + old_data['longitude'].mean()) / 2
     ]
-    map_plot = folium.Map(location=map_center, zoom_start=12, tiles='OpenStreetMap')
+    map_plot = folium.Map(location=map_center,
+                          zoom_start=12, tiles='OpenStreetMap')
     gdf = get_buildings_gdf(manhattan_file_path)
     gdf = gdf.to_crs('EPSG:4326')
 
-
-    add_markers_to_map(map_plot, old_data, color='red')
+    add_markers_to_map(old_data, color='red')
     # Save the map to an HTML file
 
     return map_plot

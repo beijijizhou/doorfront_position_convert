@@ -27,13 +27,15 @@ def create_custom_popup(row):
         popup_html += f"<b>{col}:</b> {value}<br>"
     return popup_html
 
+
 def correct_doorfront_location(row, gdf):
     row_copy = row.copy()
     lat_lon = (row_copy['latitude'], row_copy['longitude'])
     heading = row_copy['markerpov_heading']
 
     ray = get_and_plot_ray_on_map(lat_lon, heading)
-    intersected_building, intersection_point = get_and_plot_intersection(ray, gdf)
+    intersected_building, intersection_point = get_and_plot_intersection(
+        ray, gdf)
     # print(intersected_building)
     if intersection_point:
         row_copy['latitude'] = intersection_point.y
@@ -41,6 +43,8 @@ def correct_doorfront_location(row, gdf):
         row_copy['address'] = intersected_building["address"]
 
     return row_copy
+
+
 def save_corrected_data(corrected_data, filename="corrected_doorfront_data"):
     if corrected_data:
         corrected_df = pd.DataFrame(corrected_data)
@@ -48,6 +52,7 @@ def save_corrected_data(corrected_data, filename="corrected_doorfront_data"):
         print(f"Saved corrected data as {filename}.csv and {filename}.json")
         return corrected_df
     return None
+
 
 def add_markers_to_map(data, color):
     global map_plot
@@ -70,7 +75,7 @@ def add_markers_to_map(data, color):
             corrected_row = correct_doorfront_location(row, gdf)
             corrected_data.append(corrected_row)
             # Add the marker to the map
-            
+
             folium.Marker(
                 location=[row['latitude'], row['longitude']],
                 popup=create_custom_popup(row),
@@ -115,6 +120,7 @@ def get_and_plot_intersection(ray: GeoSeries, gdf: GeoDataFrame) -> Tuple[Option
     plot_intersection_point(intersection_point)
     return intersected_building, intersection_point
 
+
 def get_and_plot_ray_on_map(lat_lon, heading):
     point = Point(lat_lon[1], lat_lon[0])  # Create a Point object (lon, lat)
     ray = generate_ray(point, heading)  # Generate the ray
@@ -124,7 +130,7 @@ def get_and_plot_ray_on_map(lat_lon, heading):
         style_function=lambda x: {'color': 'black',
                                   'weight': 3}  # Customize the line style
     ).add_to(map_plot)
-    
+
     return ray
     # Extract coordinates from the LineString object
 
@@ -162,11 +168,17 @@ def create_map_with_markers(new_data_path, old_data_path):
     ]
     map_plot = folium.Map(location=map_center,
                           zoom_start=12, tiles='OpenStreetMap')
+    # map_plot = m = folium.Map(
+    #     location=map_center,
+    #     zoom_start=15,
+    #     tiles='https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}',
+    #     attr='© Google Maps'
+    # )
     gdf = get_buildings_gdf(manhattan_file_path)
     gdf = gdf.to_crs('EPSG:4326')
 
     corrected_data = add_markers_to_map(old_data, color='red')
-    # save_corrected_data(corrected_data)
+    save_corrected_data(corrected_data)
     return map_plot
 
 # Example usage

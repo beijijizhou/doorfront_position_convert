@@ -1,34 +1,61 @@
 import pandas as pd
 import folium
-from folium.plugins import MarkerCluster
 import requests
 import os
+from folium.plugins import MarkerCluster
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dotenv import load_dotenv
+
+# Load environment variables
 load_dotenv()
 
-# Fetch the API key
+# Fetch API key
 API_KEY = os.getenv("GOOGLE_API_KEY")
 
 
-def plot_coordinates_on_google_satellite(file_path, latitude_column='latitude', longitude_column='longitude', output_file="doorfront_coordinates_map.html"):
+def reverse_geocode(lat, lon):
+    """Fetch address using Google Geocoding API"""
+    url = f"https://maps.googleapis.com/maps/api/geocode/json?latlng={lat},{lon}&key={API_KEY}"
+    response = requests.get(url).json()
+
+    if response["status"] == "OK":
+        return response["results"][0]["formatted_address"]
+    return "Unknown Address"
+
+
+def get_all_addresses(df, latitude_column, longitude_column):
+    """Fetch addresses in parallel using multithreading"""
+    addresses = {}
+
+    # Use ThreadPoolExecutor for parallel requests
+    with ThreadPoolExecutor(max_workers=10) as executor:
+        future_to_index = {executor.submit(reverse_geocode, row[latitude_column], row[longitude_column]): index for index, row in df.iterrows()}
+
+        for future in as_completed(future_to_index):
+            index = future_to_index[future]
+            try:
+                addresses[index] = future.result()
+            except Exception as e:
+                addresses[index] = "Error fetching address"
+
+    return addresses
+
+
+def plot_coordinates_on_google_satellite(file_path, latitude_column='latitude', longitude_column='longitude'):
     """
     Plots coordinates from a CSV file on a Google Satellite layer and saves the map as an HTML file.
-
-    Parameters:
-        file_path (str): Path to the CSV file containing coordinates.
-        latitude_column (str): Name of the column containing latitude values. Default is 'latitude'.
-        longitude_column (str): Name of the column containing longitude values. Default is 'longitude'.
-        output_file (str): Name of the output HTML file. Default is 'doorfront_coordinates_map.html'.
     """
-    # Load the CSV file
+    # Load CSV file
     df = pd.read_csv(file_path)
-    print(API_KEY)
-    # Ensure the dataframe has the specified latitude and longitude columns
-    if latitude_column not in df.columns or longitude_column not in df.columns:
-        raise ValueError(f"CSV file must contain '{latitude_column}' and '{
-                         longitude_column}' columns.")
 
-    # Create a base map with Google Satellite layer
+    # Ensure the dataframe has the required columns
+    if latitude_column not in df.columns or longitude_column not in df.columns:
+        raise ValueError(f"CSV file must contain '{latitude_column}' and '{longitude_column}' columns.")
+
+    # Fetch addresses using multithreading
+    address_map = get_all_addresses(df, latitude_column, longitude_column)
+
+    # Create a base map
     m = folium.Map(
         location=[df[latitude_column].mean(), df[longitude_column].mean()],
         zoom_start=15,
@@ -36,36 +63,33 @@ def plot_coordinates_on_google_satellite(file_path, latitude_column='latitude', 
         attr='Google Satellite'
     )
 
-    # Add markers for each coordinate
-    # marker_cluster = MarkerCluster().add_to(m)
+    # Add markers
     for index, row in df.iterrows():
-        # Create a Google Street View URL
         lat, lon = row[latitude_column], row[longitude_column]
-        # metadata_url = f"https://maps.googleapis.com/maps/api/streetview/metadata?location={lat},{lon}&key={API_KEY}"
 
+        # Generate Google Street View link
         street_view_url = f"https://www.google.com/maps?layer=c&cbll={lat},{lon}"
 
+        # Get the reverse-geocoded address
+        google_address = address_map.get(index, "Unknown Address")
 
-        # Create a popup with a link to Street View
+        # Create a popup
         popup_content = f"""
-         <b>Address:</b><br>
+         <b>Reverse Geocoded Address:</b><br>
+        {google_address}<br>
+         <b>Original CSV Address:</b><br>
         {row["address"]}<br>
         <b>Coordinates:</b><br>
-        Lat: {row[latitude_column]}, Lon: {row[longitude_column]}<br>
+        Lat: {lat}, Lon: {lon}<br>
 
         <a href="{street_view_url}" target="_blank">Open Street View</a>
         """
         popup = folium.Popup(popup_content, max_width=300)
 
-        # Add the marker with the popup
+        # Add marker
         folium.Marker(
-            location=[row[latitude_column], row[longitude_column]],
+            location=[lat, lon],
             popup=popup
         ).add_to(m)
 
-    # Save the map to an HTML file
     return m
-
-# Example usage
-# csv_file = "/Users/hongzhonghu/Desktop/work/research/doorfront_position_convert/coordinates/corrected_doorfront_data.csv"
-# plot_coordinates_on_google_satellite(csv_file)

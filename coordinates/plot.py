@@ -34,7 +34,7 @@ def correct_doorfront_location(row, gdf):
 
     ray = get_and_plot_ray_on_map(lat_lon, heading)
     intersected_building, intersection_point = get_and_plot_intersection(ray, gdf)
-    print(intersected_building)
+    # print(intersected_building)
     if intersection_point:
         row_copy['latitude'] = intersection_point.y
         row_copy['longitude'] = intersection_point.x
@@ -84,7 +84,7 @@ def add_markers_to_map(data, color):
             print(f"Error processing row {row.name}: {e}")
     print("sucess", success)
     print("fail", fail)
-    return save_corrected_data(corrected_data)
+    return corrected_data
     # printDuplicate(lat_lon_count)
 
 
@@ -142,7 +142,7 @@ def printDuplicate(lat_lon_count):
 
 
 def get_random_sample(data):
-    size = 1
+    size = 0.01
     sample_size = int(len(data) * size)
     return data.sample(n=sample_size, random_state=42)
 
@@ -165,9 +165,8 @@ def create_map_with_markers(new_data_path, old_data_path):
     gdf = get_buildings_gdf(manhattan_file_path)
     gdf = gdf.to_crs('EPSG:4326')
 
-    add_markers_to_map(old_data, color='red')
-    # Save the map to an HTML file
-
+    corrected_data = add_markers_to_map(old_data, color='red')
+    # save_corrected_data(corrected_data)
     return map_plot
 
 # Example usage

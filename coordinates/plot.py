@@ -142,7 +142,7 @@ def printDuplicate(lat_lon_count):
 
 
 def get_random_sample(data):
-    size = 0.01
+    size = 1
     sample_size = int(len(data) * size)
     return data.sample(n=sample_size, random_state=42)
 

@@ -1,6 +1,13 @@
 import pandas as pd
 import folium
 from folium.plugins import MarkerCluster
+import requests
+import os
+from dotenv import load_dotenv
+load_dotenv()
+
+# Fetch the API key
+API_KEY = os.getenv("GOOGLE_API_KEY")
 
 
 def plot_coordinates_on_google_satellite(file_path, latitude_column='latitude', longitude_column='longitude', output_file="doorfront_coordinates_map.html"):
@@ -15,7 +22,7 @@ def plot_coordinates_on_google_satellite(file_path, latitude_column='latitude', 
     """
     # Load the CSV file
     df = pd.read_csv(file_path)
-
+    print(API_KEY)
     # Ensure the dataframe has the specified latitude and longitude columns
     if latitude_column not in df.columns or longitude_column not in df.columns:
         raise ValueError(f"CSV file must contain '{latitude_column}' and '{
@@ -30,11 +37,14 @@ def plot_coordinates_on_google_satellite(file_path, latitude_column='latitude', 
     )
 
     # Add markers for each coordinate
-    marker_cluster = MarkerCluster().add_to(m)
+    # marker_cluster = MarkerCluster().add_to(m)
     for index, row in df.iterrows():
         # Create a Google Street View URL
-        street_view_url = f"https://www.google.com/maps?layer=c&cbll={
-            row[latitude_column]},{row[longitude_column]}"
+        lat, lon = row[latitude_column], row[longitude_column]
+        # metadata_url = f"https://maps.googleapis.com/maps/api/streetview/metadata?location={lat},{lon}&key={API_KEY}"
+
+        street_view_url = f"https://www.google.com/maps?layer=c&cbll={lat},{lon}"
+
 
         # Create a popup with a link to Street View
         popup_content = f"""
@@ -51,7 +61,7 @@ def plot_coordinates_on_google_satellite(file_path, latitude_column='latitude', 
         folium.Marker(
             location=[row[latitude_column], row[longitude_column]],
             popup=popup
-        ).add_to(marker_cluster)
+        ).add_to(m)
 
     # Save the map to an HTML file
     return m

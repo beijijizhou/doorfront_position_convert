@@ -34,10 +34,11 @@ def correct_doorfront_location(row, gdf):
 
     ray = get_and_plot_ray_on_map(lat_lon, heading)
     intersected_building, intersection_point = get_and_plot_intersection(ray, gdf)
-
+    print(intersected_building)
     if intersection_point:
         row_copy['latitude'] = intersection_point.y
         row_copy['longitude'] = intersection_point.x
+        row_copy['address'] = intersected_building["address"]
 
     return row_copy
 def save_corrected_data(corrected_data, filename="corrected_doorfront_data"):

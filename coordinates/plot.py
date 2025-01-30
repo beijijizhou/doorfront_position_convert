@@ -166,19 +166,19 @@ def create_map_with_markers(new_data_path, old_data_path):
         (old_data['latitude'].mean() + old_data['latitude'].mean()) / 2,
         (old_data['longitude'].mean() + old_data['longitude'].mean()) / 2
     ]
-    map_plot = folium.Map(location=map_center,
-                          zoom_start=12, tiles='OpenStreetMap')
-    # map_plot = m = folium.Map(
-    #     location=map_center,
-    #     zoom_start=15,
-    #     tiles='https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}',
-    #     attr='© Google Maps'
-    # )
+    # map_plot = folium.Map(location=map_center,
+    #                       zoom_start=12, tiles='OpenStreetMap')
+    map_plot = m = folium.Map(
+        location=map_center,
+        zoom_start=15,
+        tiles='https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}',
+        attr='© Google Maps'
+    )
     gdf = get_buildings_gdf(manhattan_file_path)
     gdf = gdf.to_crs('EPSG:4326')
 
     corrected_data = add_markers_to_map(old_data, color='red')
-    save_corrected_data(corrected_data)
+    # save_corrected_data(corrected_data)
     return map_plot
 
 # Example usage

@@ -1,3 +1,7 @@
+import sys
+
+from geopandas import GeoDataFrame
+from typing import Dict, List, Tuple
 from typing import Optional, Tuple
 from dask_geopandas import GeoDataFrame
 import pandas as pd
@@ -5,14 +9,16 @@ import folium
 from shapely import MultiPolygon, Point
 import random
 from geopandas import GeoSeries
+from helper.fileHelper import get_random_sample
+from helper.nominatimHelper import get_nominatim_address
 from geojson_reader import get_buildings_gdf
-from help import generate_ray, get_intersection
+from helper.geoHelper import generate_ray, get_intersection
 
 gdf: GeoDataFrame = None
 map_plot: folium.Map = None
 
 
-def create_custom_popup(row):
+def create_custom_popup(row: pd.Series):
     """
     Create a custom HTML layout for the popup with attribute names on the left and values on the right.
 
@@ -28,7 +34,7 @@ def create_custom_popup(row):
     return popup_html
 
 
-def correct_doorfront_location(row, gdf):
+def get_geojson_address(row: pd.Series) -> pd.Series:
     row_copy = row.copy()
     lat_lon = (row_copy['latitude'], row_copy['longitude'])
     heading = row_copy['markerpov_heading']
@@ -36,66 +42,85 @@ def correct_doorfront_location(row, gdf):
     ray = get_and_plot_ray_on_map(lat_lon, heading)
     intersected_building, intersection_point = get_and_plot_intersection(
         ray, gdf)
-    # print(intersected_building)
     if intersection_point:
         row_copy['latitude'] = intersection_point.y
         row_copy['longitude'] = intersection_point.x
         row_copy['address'] = intersected_building["address"]
-
+        row_copy["geometry"] = intersected_building["geometry"]
     return row_copy
 
 
-def save_corrected_data(corrected_data, filename="corrected_doorfront_data"):
-    if corrected_data:
-        corrected_df = pd.DataFrame(corrected_data)
-        corrected_df.to_csv(f"{filename}.csv", index=False)
-        print(f"Saved corrected data as {filename}.csv and {filename}.json")
-        return corrected_df
-    return None
 
 
-def add_markers_to_map(data, color):
+
+def plot_nominatim_data(nominatim_data):
+    lat, lon, bounding_box = nominatim_data['nominatim_latitude'], nominatim_data[
+        'nominatim_longitude'], nominatim_data['boundingbox']
+
+    # Plot Nominatim data with a different color icon
+    folium.Marker(
+        location=[lat, lon],
+        popup="Nominatim Data",
+        icon=folium.Icon(color='blue'),  # Different color for Nominatim data
+        tooltip="Nominatim Data"  # Tooltip to indicate Nominatim data
+    ).add_to(map_plot)
+    print()
+    # Plot bounding box using Polygon (convert bounding box string to coordinates)
+    
+
+
+def get_address(data: pd.DataFrame, color: str) -> List[pd.Series]:
     global map_plot
     # Dictionary to keep track of lat, lon counts
-    lat_lon_count = {}
-    success = fail = 0
-    corrected_data = []
+    lat_lon_count: Dict[Tuple[float, float], int] = {}
+    success: int = 0
+    fail: int = 0
+    geojson_address_arr: List[pd.Series] = []
+    nominatim_address_arr: List[dict] = []
     for _, row in data.iterrows():
         try:
             # Tuple of lat and lon
-            lat_lon = (row['latitude'], row['longitude'])
-            heading = row['markerpov_heading']
-
-            # integrate_with_lat_lon(lat_lon)
+            lat_lon: Tuple[float, float] = (row['latitude'], row['longitude'])
             # Increment the count for this lat, lon pair
-            if lat_lon in lat_lon_count:
-                lat_lon_count[lat_lon] += 1
-            else:
-                lat_lon_count[lat_lon] = 1
-            corrected_row = correct_doorfront_location(row, gdf)
-            corrected_data.append(corrected_row)
+            lat_lon_count[lat_lon] = lat_lon_count.get(lat_lon, 0) + 1
+            geojson_addres = get_geojson_address(row)
+            nominatim_address = get_nominatim_address(row)
+            plot_nominatim_data(nominatim_address)
+            # nominatim_address = get_nominatim_address(row)
+            # print(type(nominatim_address))
             # Add the marker to the map
-
             folium.Marker(
                 location=[row['latitude'], row['longitude']],
                 popup=create_custom_popup(row),
                 icon=folium.Icon(color=color),
                 draggable=True,
+                tooltip="Original Doorfront Data",  # Tooltip with title
+
             ).add_to(map_plot)
 
             success += 1
         except Exception as e:
             fail += 1
             print(f"Error processing row {row.name}: {e}")
-    print("sucess", success)
+
+    print("success", success)
     print("fail", fail)
-    return corrected_data
-    # printDuplicate(lat_lon_count)
 
 
 def plot_intersection_point(intersection_point):
+    """Plot an intersection point with a popup link to open in Google Maps."""
+    lat, lon = intersection_point.y, intersection_point.x
+    google_maps_url = f"https://www.google.com/maps?q={lat},{lon}"
+
+    popup_content = f"""
+    <b>Coordinates:</b><br>
+    Lat: {lat}, Lon: {lon}<br>
+    <a href="{google_maps_url}" target="_blank">Open in Google Maps</a>
+    """
+
     folium.Marker(
-        location=[intersection_point.y, intersection_point.x],
+        location=[lat, lon],
+        popup=folium.Popup(popup_content, max_width=250),
         icon=folium.Icon(color='blue')
     ).add_to(map_plot)
 
@@ -147,18 +172,13 @@ def printDuplicate(lat_lon_count):
     print(f"The total duplicate is {total_dup}")
 
 
-def get_random_sample(data):
-    size = 0.01
-    sample_size = int(len(data) * size)
-    return data.sample(n=sample_size, random_state=42)
 
 
-def create_map_with_markers(new_data_path, old_data_path):
+
+def create_map_with_markers(old_data_path):
     global gdf, map_plot
     # Load the data from both files
-    geojson_file_path = "./full_nyc_buildings.geojson"
     manhattan_file_path = "./manhattan.geojson"
-    nyc = "./nyc.geojson"
     old_data = pd.read_csv(old_data_path)
     old_data = get_random_sample(old_data)
     # Create a map centered around the average location of both datasets
@@ -177,7 +197,7 @@ def create_map_with_markers(new_data_path, old_data_path):
     gdf = get_buildings_gdf(manhattan_file_path)
     gdf = gdf.to_crs('EPSG:4326')
 
-    corrected_data = add_markers_to_map(old_data, color='red')
+    get_address(old_data, color='red')
     # save_corrected_data(corrected_data)
     return map_plot
 

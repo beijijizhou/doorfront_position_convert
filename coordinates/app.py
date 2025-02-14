@@ -1,5 +1,6 @@
 
 from flask import Flask, render_template_string
+from helper.google_helper import read_and_get_google_address
 from plot import create_map_with_markers
 app = Flask(__name__)
 
@@ -14,8 +15,8 @@ def map_view():
     # Generate the map HTML
     map_html = create_map_with_markers(old_data_path)._repr_html_()
     # df = compare_house_numbers("updated_coordinates.csv")
-    # map_html = get_google_address(full_data_path)._repr_html_()
-   
+    # read_and_get_google_address(full_data_path)
+
     return render_template_string(map_html)
 
 

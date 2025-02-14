@@ -26,7 +26,6 @@ def get_nominatim_address(row):
                 "boundingbox": "|".join(data.get("boundingbox", [])),  # Convert to string
                 "full_response": json.dumps(data)  # Store full JSON response if needed
             }
-            print(key_details)
             return key_details
     except requests.RequestException as e:
         return {

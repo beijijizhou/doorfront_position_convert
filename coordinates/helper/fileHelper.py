@@ -11,6 +11,6 @@ def save_corrected_data(corrected_data, filename="corrected_doorfront_data"):
 
 
 def get_random_sample(data):
-    size = 0.005
+    size = 0.001
     sample_size = int(len(data) * size)
     return data.sample(n=sample_size, random_state=42)

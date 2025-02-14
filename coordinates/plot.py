@@ -9,6 +9,7 @@ import folium
 from shapely import MultiPolygon, Point
 import random
 from geopandas import GeoSeries
+from helper.google_helper import get_google_address
 from helper.fileHelper import get_random_sample
 from helper.nominatimHelper import get_nominatim_address
 from geojson_reader import get_buildings_gdf
@@ -50,26 +51,69 @@ def get_geojson_address(row: pd.Series) -> pd.Series:
     return row_copy
 
 
+import folium
+
+
+
+def plot_google_data(google_data):
+    if not google_data:
+        print("No data to plot.")
+        return
+
+    lat, lon, address, bbox = google_data
+    
+    # Unpack the bounding box tuple
+    min_lat, max_lat, min_lon, max_lon = bbox
+
+    # Create the marker with the address as a popup
+    folium.Marker(
+        location=[lat, lon],
+        popup=address,  # Address will appear in the popup
+        icon=folium.Icon(color='black'),  # Marker color
+        tooltip="google address "  # Tooltip to indicate Nominatim data
+    ).add_to(map_plot)
+
+    # Create the bounding box as a rectangle on the map
+    folium.Rectangle(
+        bounds=[(min_lat, min_lon), (max_lat, max_lon)],
+        color="black",  # Rectangle color
+        fill=True,  # Fill the rectangle with color
+        fill_color="black",  # Fill color
+        fill_opacity=0.2  # Set opacity for the fill
+    ).add_to(map_plot)
+
+
+        # print(lat, lon, address, bbox)
+
 
 
 
 def plot_nominatim_data(nominatim_data):
-    lat, lon, bounding_box = nominatim_data['nominatim_latitude'], nominatim_data[
-        'nominatim_longitude'], nominatim_data['boundingbox']
+    lat, lon = nominatim_data['nominatim_latitude'], nominatim_data[
+        'nominatim_longitude']
+    bounding_box = nominatim_data['boundingbox']
+    min_lat, max_lat, min_lon, max_lon = map(float, bounding_box.split('|'))
 
     # Plot Nominatim data with a different color icon
     folium.Marker(
         location=[lat, lon],
         popup="Nominatim Data",
-        icon=folium.Icon(color='blue'),  # Different color for Nominatim data
+        icon=folium.Icon(color='green'),  # Different color for Nominatim data
         tooltip="Nominatim Data"  # Tooltip to indicate Nominatim data
     ).add_to(map_plot)
-    print()
+    folium.Rectangle(
+        # Define the corners using the min/max lat/lon
+        bounds=[(min_lat, min_lon), (max_lat, max_lon)],
+        color="green",  # Rectangle color
+        fill=True,  # Fill the rectangle with color
+        fill_color="green",  # Fill color
+        fill_opacity=0.2  # Set opacity for the fill
+    ).add_to(map_plot)
+    print(nominatim_data['boundingbox'])
     # Plot bounding box using Polygon (convert bounding box string to coordinates)
-    
 
 
-def get_address(data: pd.DataFrame, color: str) -> List[pd.Series]:
+def plot_address(data: pd.DataFrame, color: str) -> List[pd.Series]:
     global map_plot
     # Dictionary to keep track of lat, lon counts
     lat_lon_count: Dict[Tuple[float, float], int] = {}
@@ -84,9 +128,11 @@ def get_address(data: pd.DataFrame, color: str) -> List[pd.Series]:
             # Increment the count for this lat, lon pair
             lat_lon_count[lat_lon] = lat_lon_count.get(lat_lon, 0) + 1
             geojson_addres = get_geojson_address(row)
-            nominatim_address = get_nominatim_address(row)
-            plot_nominatim_data(nominatim_address)
             # nominatim_address = get_nominatim_address(row)
+            google_data = get_google_address(row)
+            plot_google_data(google_data)
+            # plot_nominatim_data(nominatim_address)
+
             # print(type(nominatim_address))
             # Add the marker to the map
             folium.Marker(
@@ -172,9 +218,6 @@ def printDuplicate(lat_lon_count):
     print(f"The total duplicate is {total_dup}")
 
 
-
-
-
 def create_map_with_markers(old_data_path):
     global gdf, map_plot
     # Load the data from both files
@@ -188,16 +231,16 @@ def create_map_with_markers(old_data_path):
     ]
     # map_plot = folium.Map(location=map_center,
     #                       zoom_start=12, tiles='OpenStreetMap')
-    map_plot = m = folium.Map(
+    map_plot = folium.Map(
         location=map_center,
-        zoom_start=15,
+        zoom_start=19,
         tiles='https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}',
         attr='© Google Maps'
     )
     gdf = get_buildings_gdf(manhattan_file_path)
     gdf = gdf.to_crs('EPSG:4326')
 
-    get_address(old_data, color='red')
+    plot_address(old_data, color='red')
     # save_corrected_data(corrected_data)
     return map_plot
 

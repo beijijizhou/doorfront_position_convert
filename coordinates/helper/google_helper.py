@@ -1,3 +1,4 @@
+from typing import Optional, Tuple
 import pandas as pd
 import folium
 import requests
@@ -14,18 +15,34 @@ load_dotenv()
 API_KEY = os.getenv("GOOGLE_API_KEY")
 
 
-def reverse_geocode(lat, lon):
-    """Fetch address using Google Geocoding API"""
-    url = f"https://maps.googleapis.com/maps/api/geocode/json?latlng={
-        lat},{lon}&key={API_KEY}"
+def get_google_address(row: dict) -> Tuple[str, Optional[Tuple[float, float, float, float]]]:
+    lat, lon = float(row['latitude']), float(row['longitude'])
+    """Fetch address and bounding box using Google Geocoding API"""
+    url = f"https://maps.googleapis.com/maps/api/geocode/json?latlng={lat},{lon}&key={API_KEY}"
     try:
         response = requests.get(url).json()
         if response["status"] == "OK":
-            return response["results"][0]["formatted_address"]
+            result = response["results"][0]
+            formatted_address = result["formatted_address"]
+            geometry = result["geometry"]
+            location = geometry.get("location", {})
+            api_lat, api_lon = location.get("lat", lat), location.get("lng", lon)
+            # Extract bounding box (viewport)
+            viewport = geometry.get("viewport", {})
+            northeast = viewport.get("northeast", {})
+            southwest = viewport.get("southwest", {})
+
+            bounding_box = (
+                southwest.get("lat", None),
+                northeast.get("lat", None),
+                southwest.get("lng", None),
+                northeast.get("lng", None),
+            )
+            return api_lat, api_lon,formatted_address, bounding_box
     except Exception as e:
         print(f"Error fetching address for ({lat}, {lon}): {e}")
 
-    return "Unknown Address"
+    return "Unknown Address", None
 
 
 def get_all_addresses(df, latitude_column, longitude_column, batch_size=100):
@@ -49,7 +66,7 @@ def get_all_addresses(df, latitude_column, longitude_column, batch_size=100):
         addresses = {}
 
         with ThreadPoolExecutor(max_workers=10) as executor:
-            future_to_index = {executor.submit(reverse_geocode, row[latitude_column], row[longitude_column]): index
+            future_to_index = {executor.submit(get_google_address, row[latitude_column], row[longitude_column]): index
                                for index, row in batch_df.iterrows()}
 
             for future in as_completed(future_to_index):
@@ -69,13 +86,16 @@ def get_all_addresses(df, latitude_column, longitude_column, batch_size=100):
     return df
 
 
-def get_google_address(file_path, latitude_column='latitude', longitude_column='longitude', output_csv="updated_coordinates.csv"):
+def read_and_get_google_address(file_path):
     """
     Plots coordinates from a CSV file on a Google Satellite layer and saves the map as an HTML file.
     Also updates the CSV file with reverse-geocoded addresses.
     """
     # Load CSV file
-    df = pd.read_csv(file_path)
+    latitude_column = 'latitude'
+    longitude_column = 'longitude'
+    output_csv = "google_address.csv"
+    df = pd.read_csv(file_path)[:100]
 
     # Ensure the dataframe has the required columns
     if latitude_column not in df.columns or longitude_column not in df.columns:
@@ -87,7 +107,5 @@ def get_google_address(file_path, latitude_column='latitude', longitude_column='
                            longitude_column, batch_size=100)
 
     # Save the updated DataFrame to CSV
-    df.to_csv(output_csv, index=False)
-    print(f"Updated CSV saved: {output_csv}")
-
-
+    # df.to_csv(output_csv, index=False)
+    # print(f"Updated CSV saved: {output_csv}")

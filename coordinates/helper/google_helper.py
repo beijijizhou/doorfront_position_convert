@@ -23,6 +23,7 @@ def get_google_address(row: dict) -> Tuple[str, Optional[Tuple[float, float, flo
         response = requests.get(url).json()
         if response["status"] == "OK":
             result = response["results"][0]
+            print(result)
             formatted_address = result["formatted_address"]
             geometry = result["geometry"]
             location = geometry.get("location", {})
@@ -55,7 +56,10 @@ def get_all_addresses(df, latitude_column, longitude_column, batch_size=100):
     :param batch_size: Number of rows to process in one batch
     :return: DataFrame with reverse-geocoded addresses
     """
-    df["reverse_geocoded_address"] = "Processing..."
+    df["google_address"] = "Processing..."
+    df["api_lat"] = None  # Add column for API latitude
+    df["api_lon"] = None  # Add column for API longitude
+    df["bounding_box"] = None  # Add column for bounding box
 
     total_rows = len(df)
     for start in range(0, total_rows, batch_size):
@@ -66,24 +70,31 @@ def get_all_addresses(df, latitude_column, longitude_column, batch_size=100):
         addresses = {}
 
         with ThreadPoolExecutor(max_workers=10) as executor:
-            future_to_index = {executor.submit(get_google_address, row[latitude_column], row[longitude_column]): index
+            future_to_index = {executor.submit(get_google_address, row): index
                                for index, row in batch_df.iterrows()}
 
             for future in as_completed(future_to_index):
                 index = future_to_index[future]
                 try:
-                    addresses[index] = future.result()
-                except Exception:
-                    addresses[index] = "Error fetching address"
-
-        # Update the DataFrame with the fetched addresses
-        df.loc[start:end-1, "reverse_geocoded_address"] = df.loc[start:end -
-                                                                 1].index.map(addresses)
+                    result = future.result()
+                    if result:
+                        # Unpack the result (api_lat, api_lon, address, bbox)
+                        api_lat, api_lon, formatted_address, bounding_box = result
+                        # Update the DataFrame with the fetched data
+                        df.at[index, "google_address"] = formatted_address
+                        df.at[index, "api_lat"] = api_lat
+                        df.at[index, "api_lon"] = api_lon
+                        df.at[index, "bounding_box"] = bounding_box
+                    else:
+                        df.at[index, "google_address"] = "Error fetching address"
+                except Exception as e:
+                    df.at[index, "google_address"] = "Error fetching address"
 
         # Small delay to avoid hitting API rate limits
         time.sleep(1)
 
     return df
+
 
 
 def read_and_get_google_address(file_path):
@@ -107,5 +118,69 @@ def read_and_get_google_address(file_path):
                            longitude_column, batch_size=100)
 
     # Save the updated DataFrame to CSV
-    # df.to_csv(output_csv, index=False)
-    # print(f"Updated CSV saved: {output_csv}")
+    df.to_csv(output_csv, index=False)
+    print(f"Updated CSV saved: {output_csv}")
+
+
+
+import pandas as pd
+import folium
+from folium.plugins import MarkerCluster
+
+def plot_google_file(csv_file, map_plot):
+    # Read the CSV file
+    df = pd.read_csv(csv_file)
+
+    # Initialize the map (centered at a default location, you can adjust as needed)
+
+    # Initialize a MarkerCluster for better performance with many markers
+
+    # Loop through the rows of the dataframe and plot each point
+    for _, row in df.iterrows():
+        google_lat = row['google_lat']
+        google_lon = row['google_lon']
+        bounding_box = row['bounding_box']
+        print(bounding_box)
+        if pd.notna(google_lat) and pd.notna(google_lon) and pd.notna(bounding_box):
+            try:
+                # Unpack the bounding box string (assuming it's in the format: "(min_lat, max_lat, min_lon, max_lon)")
+                bbox = eval(bounding_box)  # This converts the string to a tuple
+                min_lat, max_lat, min_lon, max_lon = bbox
+                
+                # Create a marker with the google_lat, google_lon and address as popup
+                folium.Marker(
+                    location=[google_lat, google_lon],
+                    popup=f"Google Address: {row['google_address']}",  # Popup with the address
+                    icon=folium.Icon(color='black'),  # Marker color
+                    tooltip="Google Location"  # Tooltip text
+                ).add_to(map_plot)
+
+                # Add a rectangle for the bounding box
+                # folium.Rectangle(
+                #     bounds=[(min_lat, min_lon), (max_lat, max_lon)],
+                #     color="black",  # Rectangle color
+                #     fill=True,  # Fill the rectangle with color
+                #     fill_color="black",  # Fill color
+                #     fill_opacity=0.2  # Set opacity for the fill
+                # ).add_to(map_plot)
+                folium.Marker(
+                    location=[min_lat, min_lon],
+                    popup="Bounding Box Point 1",
+                    icon=folium.Icon(color='purple'),
+                    tooltip="BB Point 1"
+                ).add_to(map_plot)
+
+                folium.Marker(
+                    location=[max_lat, max_lon],
+                    popup="Bounding Box Point 2",
+                    icon=folium.Icon(color='purple'),
+                    tooltip="BB Point 2"
+                ).add_to(map_plot)
+            except Exception as e:
+                print(f"Error plotting data for row {row['object_id']}: {e}")
+
+    # Save the map as an HTML file
+    return map_plot
+
+# Call the function with your CSV file path
+

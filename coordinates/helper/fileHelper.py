@@ -10,7 +10,18 @@ def save_corrected_data(corrected_data, filename="corrected_doorfront_data"):
     return None
 
 
-def get_random_sample(data):
+def get_random_sample(data: pd.DataFrame) -> pd.DataFrame:
     size = 0.001
     sample_size = int(len(data) * size)
     return data.sample(n=sample_size, random_state=42)
+
+
+def read_data(file_path: str) -> pd.DataFrame:
+    df = pd.read_csv(file_path)[:10]
+    # df = get_random_sample(df)
+    print("current data size", len(df))
+    return df
+
+def save_to_csv(df: pd.DataFrame, output_file: str) -> None:
+    df.to_csv(output_file, index=False)
+    print(f"Data saved to {output_file}")

@@ -3,6 +3,8 @@ import requests
 import json
 import pandas as pd
 
+from helper.fileHelper import read_data
+
 
 def get_nominatim_address(row):
     lat, lon = float(row['latitude']), float(row['longitude'])
@@ -69,7 +71,9 @@ def plot_nominatim_marker(map_plot: folium.Map, address: dict) -> None:
         ).add_to(map_plot)
 
 
-def get_all_nominatim_address(data: pd.DataFrame, map_plot: folium.Map) -> None:
+def get_all_nominatim_address(map_plot: folium.Map) -> None:
+    file_path = "nominatim_address.csv"
+    data = read_data(file_path)
     for index, row in data.iterrows():
         address_details = get_nominatim_address(row)
         if address_details["nominatim_latitude"] is not None and address_details["nominatim_longitude"] is not None:

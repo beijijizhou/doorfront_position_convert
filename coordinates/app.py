@@ -27,7 +27,7 @@ def map_view():
     # get_overpass_buildings(data, map_plot)
     # print(data)
     plot_all_geojson_address(map_plot)
-    get_all_nominatim_address(data, map_plot)
+    get_all_nominatim_address(map_plot)
     plot_google_file(map_plot)
     return map_plot._repr_html_()
 

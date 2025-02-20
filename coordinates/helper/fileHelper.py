@@ -11,13 +11,13 @@ def save_corrected_data(corrected_data, filename="corrected_doorfront_data"):
 
 
 def get_random_sample(data: pd.DataFrame) -> pd.DataFrame:
-    size = 0.001
+    size = 0.01
     sample_size = int(len(data) * size)
-    return data.sample(n=sample_size, random_state=42)
+    return data.sample(n=sample_size, random_state=4)
 
 
 def read_data(file_path: str) -> pd.DataFrame:
-    df = pd.read_csv(file_path)[:10]
+    df = pd.read_csv(file_path)[:100]
     # df = get_random_sample(df)
     print("current data size", len(df))
     return df

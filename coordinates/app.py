@@ -28,6 +28,7 @@ def map_view():
     # print(data)
     plot_all_geojson_address(map_plot)
     get_all_nominatim_address(data, map_plot)
+    plot_google_file(map_plot)
     return map_plot._repr_html_()
 
 

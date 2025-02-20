@@ -4,9 +4,6 @@ import json
 import pandas as pd
 
 
-
-
-
 def get_nominatim_address(row):
     lat, lon = float(row['latitude']), float(row['longitude'])
     nominatim_url = "http://localhost:8080/reverse"
@@ -53,7 +50,7 @@ def plot_nominatim_marker(map_plot: folium.Map, address: dict) -> None:
     # Add marker for the address
     folium.Marker(
         location=[lat, lon],
-        popup=display_name,
+        tooltip=f"Nominatime Address: {display_name}",
         icon=folium.Icon(color='blue')
     ).add_to(map_plot)
 

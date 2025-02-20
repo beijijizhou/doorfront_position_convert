@@ -8,6 +8,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from dotenv import load_dotenv
 import time
 
+from helper.fileHelper import read_data
+
 # Load environment variables
 load_dotenv()
 
@@ -27,7 +29,8 @@ def get_google_address(row: dict) -> Tuple[str, Optional[Tuple[float, float, flo
             formatted_address = result["formatted_address"]
             geometry = result["geometry"]
             location = geometry.get("location", {})
-            api_lat, api_lon = location.get("lat", lat), location.get("lng", lon)
+            api_lat, api_lon = location.get(
+                "lat", lat), location.get("lng", lon)
             # Extract bounding box (viewport)
             viewport = geometry.get("viewport", {})
             northeast = viewport.get("northeast", {})
@@ -39,7 +42,7 @@ def get_google_address(row: dict) -> Tuple[str, Optional[Tuple[float, float, flo
                 southwest.get("lng", None),
                 northeast.get("lng", None),
             )
-            return api_lat, api_lon,formatted_address, bounding_box
+            return api_lat, api_lon, formatted_address, bounding_box
     except Exception as e:
         print(f"Error fetching address for ({lat}, {lon}): {e}")
 
@@ -96,7 +99,6 @@ def get_all_addresses(df, latitude_column, longitude_column, batch_size=100):
     return df
 
 
-
 def read_and_get_google_address(file_path):
     """
     Plots coordinates from a CSV file on a Google Satellite layer and saves the map as an HTML file.
@@ -122,37 +124,28 @@ def read_and_get_google_address(file_path):
     print(f"Updated CSV saved: {output_csv}")
 
 
-
-import pandas as pd
-import folium
-from folium.plugins import MarkerCluster
-
-def plot_google_file(csv_file, map_plot):
+def plot_google_file(map_plot):
     # Read the CSV file
-    df = pd.read_csv(csv_file)
-
-    # Initialize the map (centered at a default location, you can adjust as needed)
-
-    # Initialize a MarkerCluster for better performance with many markers
-
-    # Loop through the rows of the dataframe and plot each point
+    file_path = "google_address.csv"
+    df = read_data(file_path)
     for _, row in df.iterrows():
         google_lat = row['google_lat']
         google_lon = row['google_lon']
         bounding_box = row['bounding_box']
-        print(bounding_box)
+
         if pd.notna(google_lat) and pd.notna(google_lon) and pd.notna(bounding_box):
             try:
                 # Unpack the bounding box string (assuming it's in the format: "(min_lat, max_lat, min_lon, max_lon)")
-                bbox = eval(bounding_box)  # This converts the string to a tuple
+                # This converts the string to a tuple
+                bbox = eval(bounding_box)
                 min_lat, max_lat, min_lon, max_lon = bbox
-                
+
                 # Create a marker with the google_lat, google_lon and address as popup
                 folium.Marker(
                     location=[google_lat, google_lon],
-                    popup=f"Google Address: {row['google_address']}",  # Popup with the address
+                    # Tooltip with the address
+                    tooltip=f"Google Address: {row['google_address']}",
                     icon=folium.Icon(color='black'),  # Marker color
-                    tooltip="Google Location"  # Tooltip text
                 ).add_to(map_plot)
 
                 # Add a rectangle for the bounding box
@@ -163,19 +156,19 @@ def plot_google_file(csv_file, map_plot):
                 #     fill_color="black",  # Fill color
                 #     fill_opacity=0.2  # Set opacity for the fill
                 # ).add_to(map_plot)
-                folium.Marker(
-                    location=[min_lat, min_lon],
-                    popup="Bounding Box Point 1",
-                    icon=folium.Icon(color='purple'),
-                    tooltip="BB Point 1"
-                ).add_to(map_plot)
+                # folium.Marker(
+                #     location=[min_lat, min_lon],
+                #     popup="Bounding Box Point 1",
+                #     icon=folium.Icon(color='purple'),
+                #     tooltip="BB Point 1"
+                # ).add_to(map_plot)
 
-                folium.Marker(
-                    location=[max_lat, max_lon],
-                    popup="Bounding Box Point 2",
-                    icon=folium.Icon(color='purple'),
-                    tooltip="BB Point 2"
-                ).add_to(map_plot)
+                # folium.Marker(
+                #     location=[max_lat, max_lon],
+                #     popup="Bounding Box Point 2",
+                #     icon=folium.Icon(color='purple'),
+                #     tooltip="BB Point 2"
+                # ).add_to(map_plot)
             except Exception as e:
                 print(f"Error plotting data for row {row['object_id']}: {e}")
 
@@ -183,4 +176,3 @@ def plot_google_file(csv_file, map_plot):
     return map_plot
 
 # Call the function with your CSV file path
-

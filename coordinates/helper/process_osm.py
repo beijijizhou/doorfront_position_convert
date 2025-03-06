@@ -3,7 +3,7 @@ import osmium
 import pymongo
 import time
 
-def process_osm_to_mongo(input_file, db_name="osm_ny", collection_name="buildings", limit=1000, batch_size=1000):
+def process_osm_to_mongo(input_file, db_name="osm_ny", collection_name="buildings", batch_size=1000):
     # Connect to MongoDB
     client = pymongo.MongoClient("mongodb://localhost:27017/")
     db = client[db_name]
@@ -20,12 +20,9 @@ def process_osm_to_mongo(input_file, db_name="osm_ny", collection_name="building
         def __init__(self):
             super().__init__()
             self.node_coords = {}
-            self.done = False
         
         def node(self, n):
             nonlocal processed_nodes
-            if self.done:
-                return
             processed_nodes += 1
             self.node_coords[n.id] = (n.location.lon, n.location.lat)
             
@@ -37,8 +34,6 @@ def process_osm_to_mongo(input_file, db_name="osm_ny", collection_name="building
         
         def way(self, w):
             nonlocal building_count, batch
-            if self.done:
-                return
             if "building" in w.tags:
                 coords = [self.node_coords[n.ref] for n in w.nodes if n.ref in self.node_coords]
                 
@@ -58,12 +53,8 @@ def process_osm_to_mongo(input_file, db_name="osm_ny", collection_name="building
                     if len(batch) >= batch_size:
                         collection.insert_many(batch)
                         batch = []
-                    
-                    if building_count >= limit:
-                        self.done = True
-                        return
 
-    print(f"Starting processing of {input_file} (limiting to {limit} buildings)...")
+    print(f"Starting processing of {input_file} (processing all buildings)...")
     loader = BuildingLoader()
     loader.apply_file(input_file)
     

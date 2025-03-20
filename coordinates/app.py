@@ -24,7 +24,7 @@ def map_view():
     # map_html = create_map_with_markers(old_data_path)._repr_html_()
     # df = compare_house_numbers("updated_coordinates.csv")
     # google_data = read_and_get_google_address(full_data_path)
-    map_plot = folium.Map(location=[40.730610, -73.935242], zoom_start=12)
+    map_plot = folium.Map(location=[40.73083700721811, -73.9923683571111], zoom_start=20)
     # data = read_data(full_data_path)
     # # get_overpass_buildings(data, map_plot)
     # # print(data)

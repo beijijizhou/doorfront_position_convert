@@ -5,15 +5,15 @@ from pprint import pprint  # For nicer output formatting
 map_plot = None
 
 
-def addMarker(lat, lon, address):
+def addMarker(lat, lon, address, color="red"):
     folium.CircleMarker(
         location=[lat, lon],
         radius=5,
-        color="red",
+        color=color,
         fill=True,
-        fill_color="red",
+        fill_color=color,
         fill_opacity=0.7,
-                tooltip=address  # Display address on hover
+        popup=f"{address} ({lat}, {lon})"  # Display address with lat and lon
 
     ).add_to(map_plot)
 
@@ -96,7 +96,6 @@ def query_from_csv(local_map_plot, csv_path="geojson.csv", num_points=10):
     for i, row in df.head(num_points).iterrows():
         try:
             lat, lon = row["latitude"], row["longitude"]
-            print(row["address"])
             addMarker(lat, lon, row["address"])
             # print(f"\nQuerying point {i+1}/{num_points}: ({lon}, {lat})")
             building = query_closest_point(collection, lon, lat)
@@ -105,11 +104,13 @@ def query_from_csv(local_map_plot, csv_path="geojson.csv", num_points=10):
                 # Extract coordinates from the geometry (first ring of the polygon)
                 coords = building["geometry"]["coordinates"][0]
                 tags = building.get("tags", {})
+                centroid = building["centroid"]
 
                 # Prepare popup text
-                name = tags.get("name", "Unnamed Building")
+                street = tags.get("addr:street", "Unnamed Building")
                 housenumber = tags.get("addr:housenumber", "No house number")
-                popup_text = f"{name}<br>House Number: {housenumber}"
+                popup_text = f"Address: {housenumber} {street}"
+                addMarker(centroid[1], centroid[0], street, color="black")
 
                 # Plot the polygon on the map (folium expects [lat, lon])
                 folium.Polygon(

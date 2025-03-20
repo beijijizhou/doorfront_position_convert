@@ -1,28 +1,134 @@
-# Save as plot_buildings.py
 import pymongo
+import pandas as pd
 import folium
+from pprint import pprint  # For nicer output formatting
+map_plot = None
 
 
-def plot_buildings(m: folium.Map, db_name="osm_ny", collection_name="buildings", limit=1000):
+def addMarker(lat, lon, address):
+    folium.CircleMarker(
+        location=[lat, lon],
+        radius=5,
+        color="red",
+        fill=True,
+        fill_color="red",
+        fill_opacity=0.7,
+                tooltip=address  # Display address on hover
+
+    ).add_to(map_plot)
+
+
+def connect_to_db(db_name="osm_ny", collection_name="buildings"):
     # Connect to MongoDB
-    client = pymongo.MongoClient("mongodb://localhost:27017/")
-    collection = client[db_name][collection_name]
+    try:
+        client = pymongo.MongoClient("mongodb://localhost:27017/")
+        db = client[db_name]
+        collection = db[collection_name]
+        print("Successfully connected to MongoDB")
+        return collection
+    except Exception as e:
+        print(f"Error connecting to MongoDB: {e}")
+        return None
 
-    # Get first 10,000 buildings
-    buildings = list(collection.find().limit(limit))
 
-    # Center map on NYC (approx)
+def ensure_2dsphere_index(collection):
+    # Ensure 2dsphere index on 'centroid' field
+    try:
+        indexes = collection.index_information()
+        if not any("centroid_2dsphere" in idx for idx in indexes):
+            print("Creating 2dsphere index on 'centroid'...")
+            collection.create_index([("centroid", "2dsphere")])
+            print("2dsphere index created successfully")
+        else:
+            print("2dsphere index already exists")
+    except Exception as e:
+        print(f"Error managing 2dsphere index: {e}")
 
-    # Add buildings to map
-    for building in buildings:
-        coords = building["geometry"]["coordinates"][0]
-        name = building["tags"].get("name", "Unnamed Building")
-        folium.Polygon(
-            locations=[(lat, lon)
-                       for lon, lat in coords],  # Flip lon, lat for Folium
-            popup=name,
-            color="blue",
-            fill=True,
-            fill_opacity=0.4
-        ).add_to(m)
 
+def query_closest_point(collection, lon, lat):
+    # Query the closest point using $near
+    try:
+        query = {
+            "centroid": {
+                "$near": {
+                    "$geometry": {
+                        "type": "Point",
+                        "coordinates": [lon, lat]  # [longitude, latitude]
+                    },
+                    "$maxDistance": 50  # Limit to 1000 meters
+                }
+            }
+        }
+        result = collection.find_one(query)
+        if result:
+            # print(f"\nFound closest document for ({lon}, {lat}):")
+            # pprint(result)
+            return result
+        else:
+            print(f"No document found near ({lon}, {lat}) within 1000 meters")
+            return None
+    except Exception as e:
+        print(f"Error querying point ({lon}, {lat}): {e}")
+        return None
+
+
+def query_from_csv(local_map_plot, csv_path="geojson.csv", num_points=10):
+    # Connect to the database
+    global map_plot
+    collection = connect_to_db()
+    map_plot = local_map_plot
+    if collection is None:  # Explicit None check
+        return map_plot
+
+    # Ensure the index exists
+    ensure_2dsphere_index(collection)
+
+    # Read the CSV file
+    try:
+        df = pd.read_csv(csv_path)
+        print(f"Loaded {len(df)} points from {csv_path}")
+    except Exception as e:
+        print(f"Error reading CSV file {csv_path}: {e}")
+        return map_plot
+
+    # Query and plot the first 'num_points' coordinates
+    plotted_buildings = 0
+    for i, row in df.head(num_points).iterrows():
+        try:
+            lat, lon = row["latitude"], row["longitude"]
+            print(row["address"])
+            addMarker(lat, lon, row["address"])
+            # print(f"\nQuerying point {i+1}/{num_points}: ({lon}, {lat})")
+            building = query_closest_point(collection, lon, lat)
+
+            if building and "geometry" in building and building["geometry"]["type"] == "Polygon":
+                # Extract coordinates from the geometry (first ring of the polygon)
+                coords = building["geometry"]["coordinates"][0]
+                tags = building.get("tags", {})
+
+                # Prepare popup text
+                name = tags.get("name", "Unnamed Building")
+                housenumber = tags.get("addr:housenumber", "No house number")
+                popup_text = f"{name}<br>House Number: {housenumber}"
+
+                # Plot the polygon on the map (folium expects [lat, lon])
+                folium.Polygon(
+                    locations=[(coord[1], coord[0])
+                               # Swap lon, lat to lat, lon
+                               for coord in coords],
+                    popup=popup_text,
+                    color="blue",
+                    fill=True,
+                    fill_opacity=0.4
+                ).add_to(map_plot)
+                plotted_buildings += 1
+        except KeyError as e:
+            print(f"Error: CSV missing required column {e}")
+            return map_plot
+        except Exception as e:
+            print(f"Error processing row {i}: {e}")
+            continue
+
+    print(
+        f"\nFinished querying {num_points} points. Plotted {plotted_buildings} buildings.")
+    return map_plot

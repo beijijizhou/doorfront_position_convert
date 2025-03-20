@@ -1,7 +1,8 @@
 
 from flask import Flask, render_template_string
 import folium
-from helper.plotBuilding import plot_buildings
+# from helper.plotBuilding import plot_buildings
+from helper.plotBuilding import query_from_csv
 from helper.geojsonHelper import plot_all_geojson_address
 from helper.nominatimHelper import get_all_nominatim_address
 from helper.fileHelper import read_data
@@ -30,7 +31,8 @@ def map_view():
     # plot_all_geojson_address(map_plot)
     # get_all_nominatim_address(map_plot)
     # plot_google_file(map_plot)
-    plot_buildings(map_plot)
+    # plot_buildings(map_plot)
+    query_from_csv(map_plot, csv_path="geojson.csv", num_points=100)
     return map_plot._repr_html_()
 
 

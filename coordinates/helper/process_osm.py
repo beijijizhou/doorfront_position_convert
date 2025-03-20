@@ -1,16 +1,12 @@
-# Save as process_osm_to_mongo.py
 import osmium
 import pymongo
 import time
 
 def process_osm_to_mongo(input_file, db_name="osm_ny", collection_name="buildings", batch_size=1000):
-    # Connect to MongoDB
     client = pymongo.MongoClient("mongodb://localhost:27017/")
     db = client[db_name]
     collection = db[collection_name]
-    collection.drop()  # Clear existing data
-    
-    # Start timing
+    collection.drop()
     start_time = time.time()
     processed_nodes = 0
     building_count = 0
@@ -25,7 +21,6 @@ def process_osm_to_mongo(input_file, db_name="osm_ny", collection_name="building
             nonlocal processed_nodes
             processed_nodes += 1
             self.node_coords[n.id] = (n.location.lon, n.location.lat)
-            
             if processed_nodes % 100000 == 0:
                 elapsed = time.time() - start_time
                 print(f"Processed {processed_nodes} nodes in {elapsed:.2f}s "
@@ -36,8 +31,7 @@ def process_osm_to_mongo(input_file, db_name="osm_ny", collection_name="building
             nonlocal building_count, batch
             if "building" in w.tags:
                 coords = [self.node_coords[n.ref] for n in w.nodes if n.ref in self.node_coords]
-                
-                if coords and len(coords) > 1 and coords[0] == coords[-1]:  # Closed polygon
+                if coords and len(set(coords)) >= 3 and coords[0] == coords[-1]:  # Valid closed polygon
                     geometry = {
                         "type": "Polygon",
                         "coordinates": [[ [lon, lat] for lon, lat in coords ]]
@@ -49,7 +43,6 @@ def process_osm_to_mongo(input_file, db_name="osm_ny", collection_name="building
                     }
                     batch.append(doc)
                     building_count += 1
-                    
                     if len(batch) >= batch_size:
                         collection.insert_many(batch)
                         batch = []
@@ -57,14 +50,9 @@ def process_osm_to_mongo(input_file, db_name="osm_ny", collection_name="building
     print(f"Starting processing of {input_file} (processing all buildings)...")
     loader = BuildingLoader()
     loader.apply_file(input_file)
-    
-    # Insert remaining batch
     if batch:
         collection.insert_many(batch)
-    
-    # Create 2dsphere index
     collection.create_index([("geometry", "2dsphere")])
-    
     process_time = time.time() - start_time
     print(f"\nProcessing complete in {process_time:.2f} seconds")
     print(f"Total buildings stored: {building_count}")
